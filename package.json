@@ -1,0 +1,20 @@
+{
+  "name": "deepseek-client",
+  "version": "0.0.1",
+  "private": true,
+  "description": "DeepSeek HTTP proxy/gateway (token-bucket rate limiter chunk)",
+  "type": "module",
+  "engines": {
+    "node": ">=20 <23"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
+}

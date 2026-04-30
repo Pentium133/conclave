@@ -1,6 +1,6 @@
 ---
 slug: deepseek-client
-stage: arch-reviewed
+stage: audit-done
 created: 2026-04-30
 last_updated: 2026-04-30
 ---
@@ -16,8 +16,8 @@ last_updated: 2026-04-30
 - [x] verdicts-applied — 2026-04-30
 - [x] arch-proposed — 2026-04-30
 - [x] arch-reviewed — 2026-04-30
-- [ ] implemented — <YYYY-MM-DD>
-- [ ] audit-done — <YYYY-MM-DD>
+- [x] implemented — 2026-04-30
+- [x] audit-done — 2026-04-30
 
 ## Artifacts
 
@@ -31,11 +31,12 @@ last_updated: 2026-04-30
 - `adr/006-shutdown-lifecycle.md` — draft
 - `adr/007-config-and-deploy-topology.md` — draft
 - `arch-review.md` — draft
-- `post-review.md` — <pending | draft | approved>
+- `src/token-bucket.ts` + `tests/token-bucket.test.ts` — implemented (cites adr/004-outbound-rate-limit.md, NFR-CAP-1, FR-7; 11 tests passing)
+- `post-review.md` — draft
 
 ## Pending human action
 
-Read arch-review.md. If verdict=`approve`, decide whether to proceed to `/implement <scope>` or treat the design pipeline as done. If verdict=`iterate`, address the required follow-ups (re-edit ADRs in place or add new ones, append log line, optionally re-run `/review-arch`). If `block`, the architect must rewrite — re-run `/architect`.
+Read post-review.md and decide: address defects (if any), add another `/implement <scope>` chunk, or wrap up the project.
 
 ## Log
 
@@ -46,3 +47,5 @@ Read arch-review.md. If verdict=`approve`, decide whether to proceed to `/implem
 - 2026-04-30 20:30 — verdicts applied (accepted: 10, rejected: 0, deferred: 2), stage=verdicts-applied
 - 2026-04-30 21:00 — 7 ADRs written, stage=arch-proposed
 - 2026-04-30 21:45 — arch-review written, stage=arch-reviewed, verdict: iterate
+- 2026-04-30 20:48 — implemented token-bucket (cites adr/004-outbound-rate-limit.md; 11 tests passing), stage=implemented
+- 2026-04-30 20:55 — code audit written, stage=audit-done, verdict: ship (findings: 0 critical / 0 high / 0 medium / 4 low)
