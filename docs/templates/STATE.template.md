@@ -1,6 +1,6 @@
 ---
 slug: <kebab-case-slug>
-stage: <intake | interview | spec-approved | spec-reviewed | verdicts-applied | arch-proposed | arch-reviewed | audit-done>
+stage: <intake | interview | spec-approved | spec-reviewed | verdicts-applied | arch-proposed | arch-reviewed | implemented | audit-done>
 created: <YYYY-MM-DD>
 last_updated: <YYYY-MM-DD>
 ---
@@ -16,6 +16,7 @@ last_updated: <YYYY-MM-DD>
 - [ ] verdicts-applied — <YYYY-MM-DD>
 - [ ] arch-proposed — <YYYY-MM-DD>
 - [ ] arch-reviewed — <YYYY-MM-DD>
+- [ ] implemented — <YYYY-MM-DD>
 - [ ] audit-done — <YYYY-MM-DD>
 
 ## Artifacts

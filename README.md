@@ -10,15 +10,16 @@
 
 ## 1. Обзор процесса
 
-Пять стадий, пять ролей, пять артефактов. Между стадиями — явные переходы по `STATE.md` и (на двух стыках) ручные действия разработчика.
+Пять обязательных стадий проектирования + одна опциональная стадия реализации. Дефолтный конвейер — design pipeline — заканчивается на `arch-reviewed`; стадия 6 (реализация) и пост-ревью существуют для демонстрации end-to-end на реальном куске кода.
 
 | # | Стадия | Роль | Артефакт | Кто читает |
 |---|---|---|---|---|
 | 1 | Опрос требований | `interviewer` | `spec.md` (FR/NFR + open assumptions) | разработчик апрувит, дальше — `spec-skeptic` и `architect` |
 | 2 | Адверсариальное ревью спеки | `spec-skeptic` | `spec-review.md` (≥7 objections, two-pass) | разработчик применяет вердикты, далее `architect` (но НЕ `arch-reviewer`) |
-| 3 | Архитектурное решение | `architect` | `process/<slug>/adr/NNN-*.md` | `arch-reviewer`, потом `code-auditor` |
-| 4 | Архитектурное ревью | `arch-reviewer` | `arch-review.md` (per-ADR + cross-cutting) | разработчик решает go/iterate/kill |
-| 5 | Пост-ревью кода | `code-auditor` | `post-review.md` (file:line evidence) | разработчик чинит/мёржит |
+| 3 | Архитектурное решение | `architect` | `process/<slug>/adr/NNN-*.md` | `arch-reviewer`, потом `implementer` и `code-auditor` |
+| 4 | Архитектурное ревью | `arch-reviewer` | `arch-review.md` (per-ADR + cross-cutting) | разработчик решает go/iterate/kill, опционально `implementer` |
+| 5 | Реализация (опц.) | `implementer` | `src/<files>, tests/<files>` (≥5 тестов, ADR-IDs в комментариях) | `code-auditor` |
+| 6 | Пост-ревью кода | `code-auditor` | `post-review.md` (file:line evidence) | разработчик чинит/мёржит |
 
 Канонические промпты — в `.claude/agents/<name>.md`. Канонические шаблоны артефактов — в `docs/templates/`.
 
@@ -56,7 +57,14 @@
 - **Запрещено:** читать `spec-review.md` (этот запрет — load-bearing prompt-rule, см. §6.3); approve без непустого disagree-flag; generic «consider monitoring»; редактирование ADR.
 - **Артефакт:** `process/<slug>/arch-review.md`. Транзит `STATE.md → stage: arch-reviewed`.
 
-### 2.5 `code-auditor` (`.claude/agents/code-auditor.md`)
+### 2.5 `implementer` (`.claude/agents/implementer.md`) — опциональный
+
+- **Цель:** реализовать узкий кусок (один компонент / класс / эндпоинт) ровно по утверждённой спеке и ADR-ам. Не дизайнер; следует решениям архитектора буквально.
+- **Обязано:** scope discipline — строго один чанк, заданный разработчиком в `$ARGUMENTS`; ADR fidelity — каждый выбор, имя которого названо в ADR (retry, backoff, классификация ошибок и т.п.), реализован дословно, ADR-ID цитируется в комментарии у соответствующего кода; TDD — тесты сначала, прогон, реализация, прогон; ≥5 тестов, покрывающих happy path, error-paths из ADR-classification и edge cases; код под `src/`, тесты под `tests/`; self-contained — никаких сетевых вызовов в тестах, моки внешних сервисов; перед тем как сказать «готово» — реально прогнать тесты и увидеть зелёный summary.
+- **Запрещено:** добавлять фичи, которые разработчик не просил (даже если спека их упоминает); проектировать (если спека молчит — спросить разработчика, не решать самому); скипать тесты («малое изменение» не оправдание); трогать что-либо вне `src/`, `tests/`, `requirements.txt` и `STATE.md` (никаких правок спеки/ADR/ревью); cargo-cult из общих знаний — если хочется добавить ретрай на «connection-reset», убедись что ADR его классифицирует, иначе спросить.
+- **Артефакт:** файлы под `src/<chunk>/` и `tests/test_<chunk>.py`, опционально `requirements.txt`. Транзит `STATE.md → stage: implemented`.
+
+### 2.6 `code-auditor` (`.claude/agents/code-auditor.md`)
 
 - **Цель:** проверить реализацию против спеки и ADR с file:line-цитированием каждого утверждения. Read-only.
 - **Обязано:** заполнить три таблицы целиком — все FR-N, все NFR-KIND-N, все ADR-IDs (статусы: `met / not met / not testable`, `implemented / deviated / not implemented`); каждая строка имеет `file.ext:LN` evidence; findings с severity и suggested fix; vердикт `ship / fix-required / reject`.
@@ -72,7 +80,8 @@
 | `spec.md` | `interviewer` (+ ручные правки разработчика) | `spec-skeptic`, `architect`, `arch-reviewer`, `code-auditor` | — |
 | `spec-review.md` | `spec-skeptic` | `architect` (учитывает block/major objections), разработчик (применяет вердикты) | **`arch-reviewer` — hard rule** |
 | `adr/NNN-*.md` | `architect` | `arch-reviewer`, `code-auditor` | — |
-| `arch-review.md` | `arch-reviewer` | разработчик (решает go/iterate/kill), `code-auditor` опционально | — |
+| `arch-review.md` | `arch-reviewer` | разработчик (решает go/iterate/kill), `implementer` (читает «Required follow-ups»), `code-auditor` опционально | — |
+| `src/<files>, tests/<files>` | `implementer` (опц.) | `code-auditor` | — |
 | `post-review.md` | `code-auditor` | разработчик | — |
 | `STATE.md` | каждый сабагент обновляет на своей стадии | `/status`, хук `state-guard.sh`, slash-команды для предусловий | — |
 
@@ -218,8 +227,9 @@ claude            # стартует Claude Code в этой папке
 | 8 | `/architect` | команда → subagent | Поднимает `architect`. Видит и `spec.md`, и `spec-review.md`. Производит ADR-ы в `process/<slug>/adr/NNN-<topic>.md` — по одному на архитектурную развилку. ≥2 альтернативы на 4 осях, обязательная секция `### Negative`, обратные ссылки на FR/NFR-IDs. Subagent ставит `stage: arch-proposed`. |
 | 9 | (опц.) Выбрать вариант если архитектор оставил развилку | **HITL — точечно** | Если в каком-то ADR `## Decision` оставлен открытым, разработчик выбирает и фиксирует. |
 | 10 | `/review-arch` | команда → subagent | Поднимает `arch-reviewer` в **строгой изоляции**: видит только `spec.md` и ADR-ы, **НЕ читает `spec-review.md`**. Per-ADR вердикт + 3am-сценарии + операционные проблемы + **mandatory disagree-flag** (либо «I disagree with X», либо «I considered objections [...] and rejected them because [...]»). Финальный вердикт block/iterate/approve. Ставит `stage: arch-reviewed`. |
-| 11 | Решить go / iterate / kill | **HITL — финальный гейт перед кодом** | Прочитать `arch-review.md`. На `iterate` — править ADR-ы, перезапустить `/review-arch`. На `block` — назад к `/architect` или `/challenge-spec`. На `approve` — можно писать код. |
-| 12 | (после реализации) `/audit-code <paths...>` | команда → subagent | Поднимает `code-auditor`. Передать пути к коду как аргументы (`/audit-code src/retry.py src/client.py`). Заполняет таблицы FR/NFR/ADR с `file:line` evidence. Verdict: ship / fix-required / reject. Ставит `stage: audit-done`. |
+| 11 | Решить go / iterate / kill | **HITL — финальный гейт перед кодом** | Прочитать `arch-review.md`. На `iterate` — править ADR-ы, перезапустить `/review-arch`. На `block` — назад к `/architect` или `/challenge-spec`. На `approve` — можно писать код. Дефолтный пайплайн на этом заканчивается. |
+| 12 | (опц.) `/implement <scope-description>` | команда → subagent | **Только если хотите прогнать `/audit-code` на реальном коде.** Поднимает `implementer`. Передать описание узкого куска: `/implement retry-handler` или `/implement deepseek-client class`. Subagent следует ADR, пишет тесты+код (≥5 тестов, моки внешних вызовов), цитирует ADR-IDs в комментариях, ставит `stage: implemented`. |
+| 13 | (после реализации) `/audit-code <paths...>` | команда → subagent | Поднимает `code-auditor`. Передать пути к коду как аргументы (`/audit-code src/retry.py src/client.py`). Заполняет таблицы FR/NFR/ADR с `file:line` evidence. Verdict: ship / fix-required / reject. Ставит `stage: audit-done`. Допустим на стадиях `arch-reviewed` (если реализация была вне пайплайна), `implemented` (после `/implement`), `audit-done` (повторный аудит). |
 
 ### Где разработчик действует руками
 

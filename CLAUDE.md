@@ -16,6 +16,7 @@ claude               # запустить сессию Claude Code в корне
 # вручную: применяем вердикты (см. ниже отдельный раздел)
 /architect           # ADRs в process/<slug>/adr/
 /review-arch         # независимое ревью архитектуры
+/implement <scope>   # (опц.) узкий кусок кода+тестов под утверждённые ADR
 /audit-code <paths>  # когда появится код — пост-ревью реализации
 /status              # в любой момент: где мы, что дальше
 ```
@@ -46,10 +47,15 @@ claude               # запустить сессию Claude Code в корне
                           │ /review-arch (subagent: arch-reviewer)
                           ▼
                    arch-reviewed
+                          │ (опц.) /implement <scope> (subagent: implementer)
+                          ▼
+                    implemented
                           │ /audit-code <paths> (subagent: code-auditor)
                           ▼
                      audit-done
 ```
+
+Дефолтный конвейер — design pipeline — заканчивается на `arch-reviewed`. Стадии `implemented` и `audit-done` опциональны: разработчик заходит на них только если хочет продемонстрировать пост-ревью на реальном куске кода (`/implement` пишет узкий чанк по ADR, `/audit-code` его проверяет). Переход `arch-reviewed → audit-done` напрямую тоже допустим — если код шипался вне пайплайна.
 
 Все переходы (кроме двух HITL — апрува спеки и установки `verdicts-applied`) выполняют сабагенты, обновляя `process/<slug>/STATE.md`.
 
@@ -63,7 +69,8 @@ claude               # запустить сессию Claude Code в корне
 | `/challenge-spec` | Запускает `spec-skeptic` — ≥7 возражений + двупроходная самооценка | `spec-approved` |
 | `/architect` | Запускает `architect` — пишет ADRs в `process/<slug>/adr/` | `verdicts-applied` (или `spec-reviewed` с лог-строкой `no-action-needed`) |
 | `/review-arch` | Запускает `arch-reviewer` — независимое ревью; **не читает `spec-review.md`** | `arch-proposed` |
-| `/audit-code <paths>` | Запускает `code-auditor` — file:line аудит реализации против спеки и ADR | `arch-reviewed`, `audit-done` |
+| `/implement <scope>` | (опц.) Запускает `implementer` — узкий кусок кода+тестов по утверждённым ADR; ≥5 тестов, цитирование ADR-IDs в коде | `arch-reviewed`, `implemented` |
+| `/audit-code <paths>` | Запускает `code-auditor` — file:line аудит реализации против спеки и ADR | `arch-reviewed`, `implemented`, `audit-done` |
 
 Stage-валидация дублирована: внутри тела команды + в PreToolUse хуке `.claude/hooks/state-guard.sh` (belt-and-suspenders).
 
