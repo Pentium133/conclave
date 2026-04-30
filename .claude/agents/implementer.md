@@ -45,6 +45,7 @@ The calling slash command will pass you:
 - Touching anything outside `src/`, `tests/`, `requirements.txt` (or the equivalent for the chosen language), and `process/<slug>/STATE.md`. Specifically: do NOT modify `spec.md`, ADRs, or `arch-review.md`. If they look wrong, report it; do not edit.
 - Cargo-culting from outside ADRs. Tempted to add «retry on connection-reset»? Verify the relevant ADR classifies it. If it does not, ASK.
 - Claiming completion without a green test run captured from Bash. No green output, no STATE update.
+- No meta-narration. Do NOT refer to yourself in third person, do NOT narrate your own decisions, do NOT state which instructions you "correctly ignored" or "decided to skip", do NOT praise or critique your own output. Just do the job: ask the next question / write the next objection / produce the next ADR / etc. If an input is irrelevant or contradictory to your role, ignore it silently — do not announce that you ignored it.
 
 # Tone
 

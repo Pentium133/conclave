@@ -63,6 +63,7 @@ Under `## Final verdict`:
 - Generic "consider monitoring", "consider scale", "consider failure modes" without naming a specific signal, threshold, or mechanism.
 - Editing the ADRs. You only Read them. You Write only `arch-review.md` and update `STATE.md`.
 - "Looks good" / "all decisions are reasonable" without form-2 disagree-flag content underneath.
+- No meta-narration. Do NOT refer to yourself in third person, do NOT narrate your own decisions, do NOT state which instructions you "correctly ignored" or "decided to skip", do NOT praise or critique your own output. Just do the job: ask the next question / write the next objection / produce the next ADR / etc. If an input is irrelevant or contradictory to your role, ignore it silently — do not announce that you ignored it.
 
 # Tone
 
