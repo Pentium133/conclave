@@ -24,7 +24,8 @@
 #   spec-skeptic : spec-approved
 #   architect    : verdicts-applied, spec-reviewed
 #   arch-reviewer: arch-proposed
-#   code-auditor : arch-reviewed, audit-done
+#   implementer  : arch-reviewed, implemented
+#   code-auditor : arch-reviewed, implemented, audit-done
 
 set -u
 
@@ -68,7 +69,7 @@ fi
 
 # Step 2: only managed subagents are gated.
 case "$SUBAGENT_TYPE" in
-    interviewer|spec-skeptic|architect|arch-reviewer|code-auditor) ;;
+    interviewer|spec-skeptic|architect|arch-reviewer|implementer|code-auditor) ;;
     *) allow ;;
 esac
 
@@ -118,7 +119,8 @@ case "$SUBAGENT_TYPE" in
     spec-skeptic)  ALLOWED="spec-approved" ;;
     architect)     ALLOWED="verdicts-applied spec-reviewed" ;;
     arch-reviewer) ALLOWED="arch-proposed" ;;
-    code-auditor)  ALLOWED="arch-reviewed audit-done" ;;
+    implementer)   ALLOWED="arch-reviewed implemented" ;;
+    code-auditor)  ALLOWED="arch-reviewed implemented audit-done" ;;
 esac
 
 for s in $ALLOWED; do

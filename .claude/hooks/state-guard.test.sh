@@ -248,9 +248,42 @@ t10() {
     rm -rf "$sb"
 }
 
+# Test 11: allow — arch-reviewed + implementer (first chunk)
+t11() {
+    local name="allow: stage=arch-reviewed + implementer (first chunk)"
+    local sb; sb="$(make_sandbox)"
+    write_state "$sb" demo-arch state-arch-reviewed.md
+    local payload='{"tool_name":"Task","tool_input":{"subagent_type":"implementer","prompt":"go"}}'
+    run_hook "$sb" "$payload"
+    expect_allow "$name"
+    rm -rf "$sb"
+}
+
+# Test 12: allow — implemented + implementer (second chunk in same project)
+t12() {
+    local name="allow: stage=implemented + implementer (re-implementing another chunk)"
+    local sb; sb="$(make_sandbox)"
+    write_state "$sb" demo-impl state-implemented.md
+    local payload='{"tool_name":"Task","tool_input":{"subagent_type":"implementer","prompt":"go"}}'
+    run_hook "$sb" "$payload"
+    expect_allow "$name"
+    rm -rf "$sb"
+}
+
+# Test 13: block — spec-approved + implementer
+t13() {
+    local name="block: stage=spec-approved + implementer (too early)"
+    local sb; sb="$(make_sandbox)"
+    write_state "$sb" demo-spec state-spec-approved.md
+    local payload='{"tool_name":"Task","tool_input":{"subagent_type":"implementer","prompt":"go"}}'
+    run_hook "$sb" "$payload"
+    expect_block "$name"
+    rm -rf "$sb"
+}
+
 # --- run ----------------------------------------------------------------
 
-t1; t2; t3; t4; t5; t6; t7; t8; t9; t10
+t1; t2; t3; t4; t5; t6; t7; t8; t9; t10; t11; t12; t13
 
 printf '\n'
 printf '=== summary ===\n'

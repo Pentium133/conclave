@@ -23,13 +23,13 @@ and stop. Otherwise treat `$ARGUMENTS` as a whitespace-separated list of paths t
 
 ## Stage validation
 
-Read the YAML frontmatter `stage:` field of `process/<slug>/STATE.md`. Allowed stages: `arch-reviewed`, `audit-done`.
+Read the YAML frontmatter `stage:` field of `process/<slug>/STATE.md`. Allowed stages: `arch-reviewed`, `implemented`, `audit-done`.
 
-The `audit-done` stage is allowed so the developer can re-audit after fixing findings.
+The `implemented` stage is the natural follow-up after `/implement`. The `audit-done` stage is allowed so the developer can re-audit after fixing findings. The `arch-reviewed` stage is also allowed for the case where the developer skipped `/implement` and shipped code outside the pipeline.
 
 If the stage is anything else, refuse:
 
-«Cannot run `/audit-code`: current stage is `<X>`, expected `arch-reviewed` or `audit-done`. Run `/status` to see what to do next.»
+«Cannot run `/audit-code`: current stage is `<X>`, expected `arch-reviewed`, `implemented`, or `audit-done`. Run `/status` to see what to do next.»
 
 and stop.
 
