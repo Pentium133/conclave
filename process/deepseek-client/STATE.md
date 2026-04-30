@@ -1,6 +1,6 @@
 ---
 slug: deepseek-client
-stage: verdicts-applied
+stage: arch-proposed
 created: 2026-04-30
 last_updated: 2026-04-30
 ---
@@ -14,7 +14,7 @@ last_updated: 2026-04-30
 - [x] spec-approved — 2026-04-30
 - [x] spec-reviewed — 2026-04-30
 - [x] verdicts-applied — 2026-04-30
-- [ ] arch-proposed — <YYYY-MM-DD>
+- [x] arch-proposed — 2026-04-30
 - [ ] arch-reviewed — <YYYY-MM-DD>
 - [ ] implemented — <YYYY-MM-DD>
 - [ ] audit-done — <YYYY-MM-DD>
@@ -23,13 +23,19 @@ last_updated: 2026-04-30
 
 - `spec.md` — approved
 - `spec-review.md` — draft
-- `adr/ADR-001-*.md` — <pending | draft | approved>
+- `adr/001-http-server-and-routing.md` — draft
+- `adr/002-upstream-client-and-abort-propagation.md` — draft
+- `adr/003-retry-policy.md` — draft
+- `adr/004-outbound-rate-limit.md` — draft
+- `adr/005-observability-stack.md` — draft
+- `adr/006-shutdown-lifecycle.md` — draft
+- `adr/007-config-and-deploy-topology.md` — draft
 - `arch-review.md` — <pending | draft | approved>
 - `post-review.md` — <pending | draft | approved>
 
 ## Pending human action
 
-Run `/architect` to produce ADRs from the amended spec.
+Run `/review-arch` to get an independent review of the architecture.
 
 ## Log
 
@@ -38,3 +44,4 @@ Run `/architect` to produce ADRs from the amended spec.
 - 2026-04-30 19:30 — spec approved by Sergey Puhoff, stage=spec-approved
 - 2026-04-30 20:05 — spec-skeptic review written, stage=spec-reviewed, verdict: needs-changes
 - 2026-04-30 20:30 — verdicts applied (accepted: 10, rejected: 0, deferred: 2), stage=verdicts-applied
+- 2026-04-30 21:00 — 7 ADRs written, stage=arch-proposed
