@@ -1,0 +1,49 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(cp:*)",
+      "Bash(mkdir:*)",
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(diff:*)",
+      "Bash(jq:*)",
+      "Bash(python3:*)",
+      "Bash(date:*)",
+      "Bash(echo:*)",
+      "Bash(test:*)",
+      "Bash(git status)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(bash .claude/hooks/*)",
+      "Read(./process/**)",
+      "Read(./.claude/**)",
+      "Read(./docs/**)",
+      "Read(./CLAUDE.md)",
+      "Read(./README.md)",
+      "Write(./process/**)",
+      "Write(./.claude/**)",
+      "Write(./docs/**)",
+      "Edit(./process/**)",
+      "Edit(./.claude/**)",
+      "Edit(./docs/**)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push:*)"
+    ]
+  },
+  "hooks": {}
+}
