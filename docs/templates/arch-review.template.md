@@ -2,42 +2,42 @@
 
 ## Per-ADR review
 
+> Repeat this subsection for every ADR in `process/<slug>/adr/`.
+> Disagree-flag is REQUIRED at the end of every per-ADR subsection — it is the
+> per-ADR antisycophancy mechanism. An empty or evasive disagree-flag invalidates
+> the entire review.
+
 ### ADR-001: <title>
 
 - **Verdict**: <accept | challenge | reject>
-- **Arguments**:
-  - <argument #1: technical reason for the verdict, referencing FR/NFR-IDs and trade-off axes from the ADR>
+- **Arguments** (≥3 concrete, technical, citing FR/NFR-IDs and trade-off axes):
+  - <argument #1>
   - <argument #2>
   - <argument #3>
+- **3am production failure scenarios** (≥2 specific scenarios — name trigger, chain, what on-call sees):
+  - <scenario #1>
+  - <scenario #2>
+- **Operational problems** (alerts, runbooks, manual steps, capacity footguns):
+  - <problem #1>
+- **Disagree-flag (MANDATORY, MUST NOT be empty — pick exactly one form)**:
+  - **Form 1**: `I disagree with: <specific decision in this ADR and the technical reason why>`, OR
+  - **Form 2**: `I considered the following objections [≥2 candidate objections, each with reasoning] and rejected them because [per-objection rejection reasons]`.
 
 ### ADR-002: <title>
 
 - **Verdict**: ...
 - **Arguments**:
   - ...
+- **3am production failure scenarios**:
+  - ...
+- **Operational problems**:
+  - ...
+- **Disagree-flag**:
+  - ...
 
 ### ADR-NNN: <title>
 
 - ...
-
-## Disagree-flag
-
-> MANDATORY. This section MUST NOT be empty. The reviewer must take ONE of the two stances below.
-> A blank or evasive value here invalidates the entire review.
-
-- **Stance**: <"I disagree with X" | "none — considered objections [list] and rejected because [reasons]">
-- **Detail**:
-  - If stance = "I disagree with X": describe the disagreement, what evidence would change your mind, and which ADR/decision it affects.
-  - If stance = "none": list the candidate objections you considered, and explain why each was rejected (with technical reasoning, not "looks fine").
-
-## Production failure scenarios
-
-> Concrete scenarios where this architecture, as described, fails in production.
-> Each scenario must be plausible (not "what if a meteor"), tied to specific ADRs.
-
-- **Scenario 1**: <e.g. "DeepSeek returns 429 for 30s burst → ADR-002 retry policy amplifies load → cascade failure">
-- **Scenario 2**: <...>
-- **Scenario 3**: <...>
 
 ## Cross-cutting issues
 
