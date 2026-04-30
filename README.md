@@ -4,6 +4,8 @@
 
 Если вы только что клонировали репозиторий и хотите запустить пайплайн — читайте `CLAUDE.md`. Этот README отвечает на вопрос «как устроен процесс и почему именно так».
 
+**Порядок команд** для полного прогона: см. §9 «Полный прогон».
+
 ---
 
 ## 1. Обзор процесса
@@ -190,19 +192,46 @@
 
 ---
 
-## 9. Воспроизводимость
+## 9. Полный прогон
+
+Пошаговая последовательность от чистого репо до закрытого пайплайна. Команды чередуются с обязательными ручными действиями разработчика (HITL).
+
+### Подготовка
 
 ```bash
 git clone <this-repo>
 cd <repo>
-claude
-# в первом приглашении сессии:
-/start <slug>
-/interview
-# далее по CLAUDE.md
+claude            # стартует Claude Code в этой папке
 ```
 
-Никаких переменных окружения. Никаких машинно-специфичных зависимостей. Тестировано на macOS; должно работать на Linux. Хук `state-guard.sh` тестируется локально через `bash .claude/hooks/state-guard.test.sh` (10 сценариев перехода, все зелёные).
+### Шаги пайплайна
+
+| # | Действие | Тип | Что делает |
+|---|---|---|---|
+| 1 | `/start <slug>` | команда | Создаёт `process/<slug>/`, копирует `STATE.template.md`, ставит `stage: intake`, пишет `<slug>` в `process/CURRENT`. Пример slug: `deepseek-client`, `payment-service`. |
+| 2 | `/interview` | команда → subagent | Поднимает `interviewer`. Ставит `stage: interview`, копирует `spec.template.md` → `spec.md` если нет. |
+| 3 | Отвечать на вопросы интервьюера | **HITL — диалог** | Один вопрос за раз. На уклончивый ответ интервьюер переспрашивает с конкретными вариантами; после трёх попыток помечает `[ASSUMED: ...]`. Покрываются 9 NFR-категорий — пропустить нельзя. |
+| 4 | Написать `approve` в `process/<slug>/spec.md` § Approval | **HITL — текст в файле** | Это сигнал интервьюеру, что спека закрыта. Subagent сам ставит `stage: spec-approved` и обновляет `STATE.md`. |
+| 5 | `/challenge-spec` | команда → subagent | Поднимает `spec-skeptic` в изоляции (без диалога интервью). Two-pass: ≥7 возражений, потом самооценка deep/medium/shallow. Verdict только после ≥5 переживших Pass 2. Пишет `spec-review.md`. Subagent ставит `stage: spec-reviewed`. |
+| 6 | Применить вердикты к `spec.md` | **HITL — правка файлов** | Прочитать `spec-review.md`, для каждого objection пометить `accepted` / `rejected` / `deferred` (можно прямо в `spec-review.md` рядом с objection). Обновить `spec.md` под accepted: добавить недостающие FR/NFR, разрешить противоречия, нанять цифры. |
+| 7 | Вручную поставить `stage: verdicts-applied` в `process/<slug>/STATE.md` | **HITL — единственный stage-переход вручную** | Открыть `STATE.md`, изменить YAML-фронт `stage: spec-reviewed` → `stage: verdicts-applied`, поставить галочку у `verdicts-applied` с датой, добавить лог-строку. Все остальные переходы делают subagents автоматически. |
+| 8 | `/architect` | команда → subagent | Поднимает `architect`. Видит и `spec.md`, и `spec-review.md`. Производит ADR-ы в `process/<slug>/adr/NNN-<topic>.md` — по одному на архитектурную развилку. ≥2 альтернативы на 4 осях, обязательная секция `### Negative`, обратные ссылки на FR/NFR-IDs. Subagent ставит `stage: arch-proposed`. |
+| 9 | (опц.) Выбрать вариант если архитектор оставил развилку | **HITL — точечно** | Если в каком-то ADR `## Decision` оставлен открытым, разработчик выбирает и фиксирует. |
+| 10 | `/review-arch` | команда → subagent | Поднимает `arch-reviewer` в **строгой изоляции**: видит только `spec.md` и ADR-ы, **НЕ читает `spec-review.md`**. Per-ADR вердикт + 3am-сценарии + операционные проблемы + **mandatory disagree-flag** (либо «I disagree with X», либо «I considered objections [...] and rejected them because [...]»). Финальный вердикт block/iterate/approve. Ставит `stage: arch-reviewed`. |
+| 11 | Решить go / iterate / kill | **HITL — финальный гейт перед кодом** | Прочитать `arch-review.md`. На `iterate` — править ADR-ы, перезапустить `/review-arch`. На `block` — назад к `/architect` или `/challenge-spec`. На `approve` — можно писать код. |
+| 12 | (после реализации) `/audit-code <paths...>` | команда → subagent | Поднимает `code-auditor`. Передать пути к коду как аргументы (`/audit-code src/retry.py src/client.py`). Заполняет таблицы FR/NFR/ADR с `file:line` evidence. Verdict: ship / fix-required / reject. Ставит `stage: audit-done`. |
+
+### Где разработчик действует руками
+
+Только четыре HITL-точки в файлы: `approve` в `spec.md` (шаг 4), пометки accepted/rejected в `spec-review.md` и обновление `spec.md` (шаг 6), ручной переход на `verdicts-applied` в `STATE.md` (шаг 7), решение go/iterate/kill после `arch-review.md` (шаг 11). Всё остальное — диалог с subagent или slash-команда.
+
+### Resumability
+
+Закрыли сессию — открываете снова, `claude` в той же папке, `/status`. Команда читает `process/CURRENT` и `STATE.md` и говорит, на каком шаге остановились. Никакого скрытого состояния в контексте основного агента — всё на диске.
+
+### Окружение
+
+Никаких переменных окружения. Никаких машинно-специфичных зависимостей. Тестировано на macOS; должно работать на Linux. Бинарь `jq` опционален — `state-guard.sh` падает на `grep`-фолбэк если `jq` не найден. Хук `state-guard.sh` тестируется локально через `bash .claude/hooks/state-guard.test.sh` (10 сценариев перехода, все зелёные).
 
 ---
 
