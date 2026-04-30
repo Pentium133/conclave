@@ -798,25 +798,24 @@ Stop hook. После каждого вызова subagent — парсит `spe
 
 ---
 
-### Task 30: Maленький retry-handler + /audit-code
+### Task 30: Маленький retry-handler через `/implement` + `/audit-code`
 
 **Files:**
 - Create: `src/retry_handler.py` (или другой язык — выбрать в момент исполнения)
 - Create: `tests/test_retry_handler.py`
+- Create: `requirements.txt` (если добавятся deps)
 
-- [ ] **Step 1: Реализовать retry-handler по выбранному ADR**
+Реализация теперь не «руками» — поднимаем сабагент `implementer` через новую slash-команду `/implement`. Он сам читает `spec.md`, ADR-ы и `arch-review.md`, цитирует ADR-IDs в комментариях кода, пишет ≥5 unit-тестов с моками (без сетевых вызовов), прогоняет их, и обновляет `STATE.md` → `stage: implemented`. Это бонусный шестой этап пайплайна — design pipeline по умолчанию заканчивается на `arch-reviewed`, а `/implement` подключается опционально, чтобы показать, что `code-auditor` реально работает на коде.
 
-Минимум: classify_error(response) → {retryable, non_retryable, rate_limit}; backoff(attempt) → delay; retry_loop с лимитом попыток. ≤100 строк.
+- [ ] **Step 1: Прогнать `/implement retry-handler`**
 
-- [ ] **Step 2: Написать unit-тесты**
+`/implement retry-handler` (или `/implement retry-handler --lang python`). Subagent проверит `stage: arch-reviewed`, поднимет `implementer`, тот следует TDD: пишет тесты сначала, затем `classify_error(response) → {retryable, non_retryable, rate_limit}`, `backoff(attempt) → delay`, `retry_loop` с лимитом попыток, ровно по ADR. Канонические пять тестов: 5xx → retry-then-success, 4xx → no retry, 429 → respect Retry-After, max attempts exhausted, success on first try.
 
-≥5 тестов: 5xx → retry, 4xx → no retry, 429 → respect Retry-After, max attempts, success on first try.
+- [ ] **Step 2: Прогнать `/audit-code src/retry_handler.py tests/test_retry_handler.py`**
 
-- [ ] **Step 3: Прогнать `/audit-code src/retry_handler.py`**
+Получить `process/deepseek-client/post-review.md`. Проверить что аудит реально нашёл evidence для каждого FR/ADR пункта (или пометил `not-testable` с причиной).
 
-Получить `process/deepseek-client/post-review.md`. Проверить что аудит реально нашёл evidence для каждого FR/ADR пункта (или пометил not-testable с причиной).
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ---
 
