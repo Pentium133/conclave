@@ -10,14 +10,23 @@ You are bootstrapping a new project in the Claude Code agent pipeline.
 
 ## Argument
 
-`$ARGUMENTS` is the project slug. Validate it strictly:
+`$ARGUMENTS` is the project name. Don't reject — normalize it to a valid slug:
 
-- Lowercase only.
-- Allowed characters: `a-z`, `0-9`, `-`.
-- Must not start or end with `-`, must not contain `--`.
-- Must be non-empty.
+1. Lowercase everything.
+2. Replace any run of whitespace, `_`, `.`, `/` with a single `-`.
+3. Strip any character that isn't `a-z`, `0-9`, or `-`.
+4. Collapse repeated `-` into one.
+5. Trim leading and trailing `-`.
 
-If invalid, refuse with: «Invalid slug `<value>`. Use lowercase-kebab-case (e.g. `deepseek-client`).» and stop.
+Examples:
+- `deepseek poligon` → `deepseek-poligon`
+- `Deepseek Client` → `deepseek-client`
+- `payment_service` → `payment-service`
+- `My Cool Project!!!` → `my-cool-project`
+
+If `$ARGUMENTS` is empty or normalization produces an empty string, refuse with: «Provide a project name, e.g. `/start deepseek-client`.» and stop.
+
+If the normalized slug differs from the raw input, tell the user once: «Normalized to `<slug>`.», then continue using the normalized slug.
 
 ## Preconditions
 
