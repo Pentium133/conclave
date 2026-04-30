@@ -1,6 +1,6 @@
 ---
 slug: deepseek-client
-stage: intake
+stage: spec-approved
 created: 2026-04-30
 last_updated: 2026-04-30
 ---
@@ -10,8 +10,8 @@ last_updated: 2026-04-30
 ## Current stage
 
 - [x] intake — 2026-04-30
-- [ ] interview — <YYYY-MM-DD>
-- [ ] spec-approved — <YYYY-MM-DD>
+- [x] interview — 2026-04-30
+- [x] spec-approved — 2026-04-30
 - [ ] spec-reviewed — <YYYY-MM-DD>
 - [ ] verdicts-applied — <YYYY-MM-DD>
 - [ ] arch-proposed — <YYYY-MM-DD>
@@ -21,7 +21,7 @@ last_updated: 2026-04-30
 
 ## Artifacts
 
-- `spec.md` — <pending | draft | approved>
+- `spec.md` — approved
 - `spec-review.md` — <pending | draft | approved>
 - `adr/ADR-001-*.md` — <pending | draft | approved>
 - `arch-review.md` — <pending | draft | approved>
@@ -29,8 +29,10 @@ last_updated: 2026-04-30
 
 ## Pending human action
 
-Run `/interview` to start requirements gathering.
+Run `/challenge-spec` to start adversarial review.
 
 ## Log
 
 - 2026-04-30 19:13 — project bootstrapped, stage=intake
+- 2026-04-30 19:15 — interview started
+- 2026-04-30 19:30 — spec approved by Sergey Puhoff, stage=spec-approved
