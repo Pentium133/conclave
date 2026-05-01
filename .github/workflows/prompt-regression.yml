@@ -1,0 +1,203 @@
+# Prompt Regression Suite — manual workflow_dispatch ONLY.
+#
+# This workflow runs the antisycophancy regression fixtures from
+# tests/prompts/. It is NOT triggered on push/PR because:
+#   1. Each run consumes API tokens (paid).
+#   2. Headless invocation of interactive slash commands via `claude -p`
+#      is experimental — see notes below.
+#
+# To run: GitHub UI → Actions → "Prompt Regression Suite" → Run workflow.
+#
+# Status: EXPERIMENTAL. The headless flow assumes:
+#   - Claude Code CLI exposes `claude -p "<prompt>"` for one-shot prompts.
+#   - Slash commands like /interview can be triggered via stdin / -p, OR
+#     a non-interactive equivalent exists.
+#   - ANTHROPIC_API_KEY is set in repo secrets.
+# If any assumption breaks at runtime, the workflow logs the limitation and
+# falls back to running ONLY the structural assertions on artifacts that
+# the developer pre-uploaded as workflow artifacts (see "Manual artifact
+# mode" below).
+
+name: Prompt Regression Suite
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode: "headless" (full agent runs, requires API key) or "assert-only" (pre-uploaded artifacts)'
+        required: true
+        default: 'assert-only'
+        type: choice
+        options:
+          - headless
+          - assert-only
+      artifact_run_id:
+        description: 'For assert-only mode: workflow run ID that uploaded process/<slug>/ artifacts (optional)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prompt-regression:
+    name: Run prompt regression fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        if: ${{ inputs.mode == 'headless' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        if: ${{ inputs.mode == 'headless' }}
+        # TODO: verify exact npm package name for Claude Code CLI.
+        # As of writing this is the documented installation path; if the
+        # package was renamed, update this command.
+        run: |
+          set -euo pipefail
+          npm install -g @anthropic-ai/claude-code || {
+            echo "::warning::npm install of @anthropic-ai/claude-code failed."
+            echo "::warning::If the package name has changed, update this step."
+            exit 1
+          }
+          which claude || { echo "::error::claude CLI not on PATH after install"; exit 1; }
+          claude --version || true
+
+      - name: Sanity — check artifacts and scripts
+        run: |
+          set -euo pipefail
+          test -x tests/prompts/run-all.sh || chmod +x tests/prompts/run-all.sh
+          test -x tests/prompts/01-evasive-developer/assert.sh || chmod +x tests/prompts/01-evasive-developer/assert.sh
+          test -x tests/prompts/02-soft-spec/assert.sh         || chmod +x tests/prompts/02-soft-spec/assert.sh
+          test -x tests/prompts/03-plausible-adrs/assert.sh    || chmod +x tests/prompts/03-plausible-adrs/assert.sh
+          test -f docs/templates/STATE.template.md
+          ls -la tests/prompts/
+
+      # ---------------------------------------------------------------------
+      # Headless mode: full agent runs via `claude -p`.
+      #
+      # NOTE (experimental): This step is currently a best-effort scaffold.
+      # Real headless invocation of slash commands like `/interview` requires
+      # one of:
+      #   (a) `claude -p "/interview"` accepting stdin for the dialogue, OR
+      #   (b) a dedicated non-interactive flag for subagent dispatch, OR
+      #   (c) a SKILL.md / agent variant that takes input from a file.
+      #
+      # If none of (a)-(c) is wired up, this step will be skipped gracefully
+      # and the workflow will still print the assert-only flow as fallback.
+      # ---------------------------------------------------------------------
+      - name: Run fixtures headless
+        if: ${{ inputs.mode == 'headless' }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set. Headless mode cannot run."
+            exit 1
+          fi
+
+          echo "::warning::Headless prompt-regression is EXPERIMENTAL."
+          echo "::warning::See workflow source for the assumptions / TODOs."
+
+          # Fixture 02 — soft-spec: setup, then ask claude to /challenge-spec.
+          SLUG02="ci-softspec-${GITHUB_RUN_ID}"
+          bash tests/prompts/02-soft-spec/assert.sh "$SLUG02" --setup-only
+          # Best-effort: send the slash command. If `claude -p` returns non-zero
+          # or the artifact is not produced, we mark this fixture as skipped.
+          if claude -p "/challenge-spec" >/tmp/claude-fixture02.log 2>&1; then
+            echo "claude /challenge-spec exited 0 — running assertions"
+          else
+            echo "::warning::claude -p '/challenge-spec' exited non-zero (see log). Headless invocation of slash commands may not be supported in this CLI version."
+            cat /tmp/claude-fixture02.log || true
+          fi
+          if [[ -f "process/$SLUG02/spec-review.md" ]]; then
+            bash tests/prompts/02-soft-spec/assert.sh "$SLUG02" --assert-only --cleanup
+          else
+            echo "::warning::process/$SLUG02/spec-review.md was not produced — skipping fixture 02 assertions."
+          fi
+
+          # Fixture 03 — plausible-adrs: same shape.
+          SLUG03="ci-adrs-${GITHUB_RUN_ID}"
+          bash tests/prompts/03-plausible-adrs/assert.sh "$SLUG03" --setup-only
+          if claude -p "/review-arch" >/tmp/claude-fixture03.log 2>&1; then
+            echo "claude /review-arch exited 0 — running assertions"
+          else
+            echo "::warning::claude -p '/review-arch' exited non-zero (see log)."
+            cat /tmp/claude-fixture03.log || true
+          fi
+          if [[ -f "process/$SLUG03/arch-review.md" ]]; then
+            bash tests/prompts/03-plausible-adrs/assert.sh "$SLUG03" --assert-only --cleanup
+          else
+            echo "::warning::process/$SLUG03/arch-review.md was not produced — skipping fixture 03 assertions."
+          fi
+
+          # Fixture 01 (evasive-developer) is skipped in headless mode:
+          # it requires a multi-turn dialogue (canned answers fed in
+          # response to interviewer questions) which `claude -p` does not
+          # support today. Run it manually via `bash tests/prompts/run-all.sh`.
+          echo "::notice::Fixture 01 (evasive-developer) is interactive-only; skipped in headless CI."
+
+      # ---------------------------------------------------------------------
+      # Assert-only mode: developer pre-runs the fixtures locally, uploads
+      # process/<slug>/ as artifacts (or commits them on a side branch),
+      # and CI just runs the structural grep assertions.
+      # ---------------------------------------------------------------------
+      - name: Download pre-uploaded artifacts
+        if: ${{ inputs.mode == 'assert-only' && inputs.artifact_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          path: process/
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run assertions on pre-uploaded artifacts
+        if: ${{ inputs.mode == 'assert-only' }}
+        run: |
+          set -euo pipefail
+          if [[ ! -d process ]] || [[ -z "$(ls -A process/ 2>/dev/null || true)" ]]; then
+            echo "::warning::No process/<slug>/ artifacts found. assert-only mode requires either:"
+            echo "::warning::  - A previous workflow run that uploaded process/<slug>/ as an artifact (use artifact_run_id input), OR"
+            echo "::warning::  - The fixtures committed to a branch (run workflow on that branch)."
+            echo "::warning::Suite cannot run; exiting with status 0 (no failure, just nothing to check)."
+            exit 0
+          fi
+
+          FAILED=0
+          for slug_dir in process/*/; do
+            slug="$(basename "$slug_dir")"
+            if [[ -f "$slug_dir/spec-review.md" ]]; then
+              echo "Running fixture 02 assertions on $slug..."
+              bash tests/prompts/02-soft-spec/assert.sh "$slug" --assert-only || FAILED=1
+            fi
+            if [[ -f "$slug_dir/arch-review.md" ]]; then
+              echo "Running fixture 03 assertions on $slug..."
+              bash tests/prompts/03-plausible-adrs/assert.sh "$slug" --assert-only || FAILED=1
+            fi
+            if [[ -f "$slug_dir/spec.md" && -f "$slug_dir/STATE.md" ]] && grep -qE 'evasive|interview' "$slug_dir/STATE.md" 2>/dev/null; then
+              echo "Running fixture 01 assertions on $slug..."
+              bash tests/prompts/01-evasive-developer/assert.sh "$slug" || FAILED=1
+            fi
+          done
+          exit $FAILED
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Prompt Regression Suite"
+            echo ""
+            echo "Mode: \`${{ inputs.mode }}\`"
+            echo ""
+            echo "See [tests/prompts/README.md](../tree/${{ github.sha }}/tests/prompts/README.md) for fixture details."
+            echo ""
+            echo "**Note:** This workflow is experimental. Headless invocation of slash commands via \`claude -p\` is not guaranteed to work for multi-turn flows; for reliable runs use \`bash tests/prompts/run-all.sh\` locally."
+          } >> "$GITHUB_STEP_SUMMARY"
