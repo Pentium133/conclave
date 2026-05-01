@@ -111,7 +111,7 @@ pause_for_user "Ready to start fixture 01?"
 # --- fixture 01: evasive developer ---
 printf '\n----------------------------------------------------------------------\n'
 printf '  fixture 01: evasive developer (interviewer regression)\n'
-printf '----------------------------------------------------------------------\n'
+printf -- '----------------------------------------------------------------------\n'
 cat <<EOF
 
 In your claude session, run:
@@ -143,7 +143,7 @@ fi
 # --- fixture 02: soft spec ---
 printf '\n----------------------------------------------------------------------\n'
 printf '  fixture 02: soft spec (spec-skeptic regression)\n'
-printf '----------------------------------------------------------------------\n'
+printf -- '----------------------------------------------------------------------\n'
 printf '\nSetting up process/%s with the soft-spec.md fixture...\n' "$SLUG_02"
 bash "$SCRIPT_DIR/02-soft-spec/assert.sh" "$SLUG_02" --setup-only
 
@@ -175,7 +175,7 @@ fi
 # --- fixture 03: plausible adrs ---
 printf '\n----------------------------------------------------------------------\n'
 printf '  fixture 03: plausible adrs (arch-reviewer regression)\n'
-printf '----------------------------------------------------------------------\n'
+printf -- '----------------------------------------------------------------------\n'
 printf '\nSetting up process/%s with input-spec.md and plausible ADRs...\n' "$SLUG_03"
 bash "$SCRIPT_DIR/03-plausible-adrs/assert.sh" "$SLUG_03" --setup-only
 
