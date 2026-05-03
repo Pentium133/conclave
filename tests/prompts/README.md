@@ -15,19 +15,25 @@ TDD-suite для **промптов сабагентов**. Все приёмы 
 ## Как запускать
 
 ```bash
-bash tests/prompts/run-all.sh                # запустить все три фикстуры
+bash tests/prompts/run-all.sh                # авто: TTY → interactive, no-TTY → headless
+bash tests/prompts/run-all.sh --headless     # принудительно headless (фикстура 01 пропускается)
+bash tests/prompts/run-all.sh --interactive  # принудительно interactive (все 3 фикстуры)
 bash tests/prompts/run-all.sh --no-cleanup   # оставить process/<test-slug>/ для ручного осмотра
 bash tests/prompts/run-all.sh --help         # справка
 ```
 
-Suite **интерактивный**: ему нужна открытая `claude`-сессия в другом окне терминала, в которой разработчик исполняет соответствующую slash-команду по подсказке. Между шагами driver ждёт `Enter`.
+Два режима:
 
-Запускать каждую фикстуру отдельно тоже можно:
+- **Headless (default при отсутствии TTY).** Driver сам вызывает `claude -p "/<command>" --dangerously-skip-permissions` для фикстур 02 и 03 — однокомандный запуск, никакой второй терминал не нужен. Фикстура 01 (`evasive-developer`) **пропускается**: `/interview` — многоходовой диалог, который через `-p` не воспроизвести. Время: ~3–5 минут на 2 фикстуры. Нужен `ANTHROPIC_API_KEY` или существующий `claude login`.
+- **Interactive (default при наличии TTY).** Старый flow: driver делает паузу, разработчик в другом окне терминала с открытой `claude`-сессией исполняет соответствующую slash-команду, возвращается и жмёт Enter. Прогоняются все 3 фикстуры. Время: ~10–15 минут.
+
+Запускать каждую фикстуру отдельно тоже можно (для отладки одной конкретной):
 
 ```bash
-bash tests/prompts/01-evasive-developer/assert.sh <test-slug>
-bash tests/prompts/02-soft-spec/assert.sh <test-slug>
-bash tests/prompts/03-plausible-adrs/assert.sh <test-slug>
+bash tests/prompts/01-evasive-developer/assert.sh <test-slug>             # требует уже готовый spec.md
+bash tests/prompts/02-soft-spec/assert.sh <test-slug> --setup-only        # только подготовка
+bash tests/prompts/02-soft-spec/assert.sh <test-slug> --assert-only       # только проверки
+bash tests/prompts/03-plausible-adrs/assert.sh <test-slug>                # полный setup+pause+assert
 ```
 
 ## Что проверяет каждая фикстура
@@ -44,7 +50,7 @@ LLM-вывод не сравнивается побайтово. Что СТАБ
 
 ## CI
 
-`.github/workflows/prompt-regression.yml` — workflow с триггером `workflow_dispatch` (ручной запуск из GitHub UI). Не запускается автоматически: каждый прогон стоит токенов, а headless-режим `claude -p` для интерактивных slash-команд — экспериментальный (см. комментарии в workflow). Для тестового задания достаточно ручного smoke перед сдачей.
+`.github/workflows/prompt-regression.yml` — workflow с триггером `workflow_dispatch` (ручной запуск из GitHub UI). Не запускается автоматически: каждый прогон стоит токенов. В CI нет TTY, поэтому `run-all.sh` автоматически выбирает headless-режим и прогоняет фикстуры 02 и 03 через `claude -p`. Фикстура 01 в CI всегда `SKIP` (требует диалог). Требует секрет `ANTHROPIC_API_KEY` в репозитории.
 
 ## Дисциплина при добавлении новых фикстур
 
