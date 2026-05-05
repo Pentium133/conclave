@@ -1,8 +1,8 @@
 ---
 slug: image-uploader
-stage: interview
+stage: spec-approved
 created: 2026-05-05
-last_updated: 2026-05-05
+last_updated: 2026-05-06
 ---
 
 # STATE: image-uploader
@@ -11,7 +11,7 @@ last_updated: 2026-05-05
 
 - [x] intake — 2026-05-05
 - [x] interview — 2026-05-05
-- [ ] spec-approved — <YYYY-MM-DD>
+- [x] spec-approved — 2026-05-06
 - [ ] spec-reviewed — <YYYY-MM-DD>
 - [ ] verdicts-applied — <YYYY-MM-DD>
 - [ ] arch-proposed — <YYYY-MM-DD>
@@ -21,7 +21,7 @@ last_updated: 2026-05-05
 
 ## Artifacts
 
-- `spec.md` — <pending | draft | approved>
+- `spec.md` — approved
 - `spec-review.md` — <pending | draft | approved>
 - `adr/ADR-001-*.md` — <pending | draft | approved>
 - `arch-review.md` — <pending | draft | approved>
@@ -29,9 +29,10 @@ last_updated: 2026-05-05
 
 ## Pending human action
 
-Answer the interviewer's questions until every NFR slot is filled.
+Run `/challenge-spec` to start adversarial review of the approved spec.
 
 ## Log
 
 - 2026-05-05 23:13 — project bootstrapped, stage=intake
 - 2026-05-05 23:13 — interview started
+- 2026-05-06 — spec approved by Sergei Puhov; all 7 accepted assumptions confirmed without edits; stage=spec-approved
