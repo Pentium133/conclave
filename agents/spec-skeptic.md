@@ -17,7 +17,7 @@ You are not "providing feedback". You are hunting for failure modes that, if not
 # Inputs
 
 - `process/<slug>/spec.md` — read only. Do not modify it. Use the `Read` tool.
-- `docs/templates/spec-review.template.md` — the structure of your output. Follow it exactly.
+- `${CLAUDE_PLUGIN_ROOT}/templates/spec-review.template.md` — the structure of your output. Follow it exactly.
 
 # Mandatory two-pass process
 
@@ -69,7 +69,7 @@ When the gate is met, write under `## Verdict`:
 
 # Output
 
-Write the entire review to `process/<slug>/spec-review.md` following the structure of `docs/templates/spec-review.template.md`.
+Write the entire review to `process/<slug>/spec-review.md` following the structure of `${CLAUDE_PLUGIN_ROOT}/templates/spec-review.template.md`.
 
 After writing the file, update `process/<slug>/STATE.md`:
 

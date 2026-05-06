@@ -2,23 +2,37 @@
 
 ## Что это
 
-Это пайплайн агентов Claude Code, который проводит разработчика через структурированное проектирование бэкенд-задачи: интервью → спека → адверсариальное ревью → ADR → ревью архитектуры → пост-ревью кода. Сам бэкенд здесь не пишется — артефакт репозитория это **конфигурация** (`.claude/`, шаблоны, хук) и порядок её использования.
+Это **Claude Code плагин `conclave`** — пайплайн агентов, который проводит разработчика через структурированное проектирование бэкенд-задачи: интервью → спека → адверсариальное ревью → ADR → ревью архитектуры → пост-ревью кода. Сам бэкенд здесь не пишется — артефакт репозитория это **конфигурация плагина** (агенты, команды, скиллы, шаблоны, хук) и порядок её использования.
+
+Все команды живут в namespace `/conclave:*`, чтобы исключить конфликты с другими плагинами.
+
+## Установка
+
+Этот репозиторий и есть плагин. Установите его в Claude Code как локальный marketplace:
+
+```bash
+# в любой сессии Claude Code:
+/plugin marketplace add /path/to/this/repo
+/plugin install conclave@<marketplace-name>
+```
+
+После этого команды `/conclave:*` будут доступны в любом проекте, а артефакты пайплайна (`process/<slug>/...`) будут писаться в CWD конкретного проекта.
 
 ## Quickstart
 
 ```bash
-cd <repo>            # этот репозиторий
-claude               # запустить сессию Claude Code в корне
-/start <slug>        # пример: /start payment-service
-/interview           # отвечаем на вопросы — на выходе process/<slug>/spec.md
+cd <your-project>            # любой проект, где хотите запустить пайплайн
+claude                       # сессия Claude Code
+/conclave:start <slug>       # пример: /conclave:start payment-service
+/conclave:interview          # отвечаем на вопросы — на выходе process/<slug>/spec.md
 # вручную: апрувим спеку — пишем `approve` и дату в §Approval файла spec.md
-/challenge-spec      # адверсариальное ревью спеки
+/conclave:challenge-spec     # адверсариальное ревью спеки
 # вручную: применяем вердикты (см. ниже отдельный раздел)
-/architect           # ADRs в process/<slug>/adr/
-/review-arch         # независимое ревью архитектуры
-/implement <scope>   # (опц.) узкий кусок кода+тестов под утверждённые ADR
-/audit-code <paths>  # когда появится код — пост-ревью реализации
-/status              # в любой момент: где мы, что дальше
+/conclave:architect          # ADRs в process/<slug>/adr/
+/conclave:review-arch        # независимое ревью архитектуры
+/conclave:implement <scope>  # (опц.) узкий кусок кода+тестов под утверждённые ADR
+/conclave:audit-code <paths> # когда появится код — пост-ревью реализации
+/conclave:status             # в любой момент: где мы, что дальше
 ```
 
 ## Машина состояний пайплайна
@@ -63,16 +77,16 @@ claude               # запустить сессию Claude Code в корне
 
 | Команда | Что делает | Допустимая stage |
 |---|---|---|
-| `/start <slug>` | Создаёт `process/<slug>/`, копирует `STATE.md`, выставляет `stage: intake`, пишет `process/CURRENT` | (нет активного проекта) |
-| `/status` | Read-only — показывает stage, чек-лист, артефакты, pending action | любая |
-| `/interview` | Запускает сабагент `interviewer` для роста `spec.md` | `intake`, `interview` |
-| `/challenge-spec` | Запускает `spec-skeptic` — ≥7 возражений + двупроходная самооценка | `spec-approved` |
-| `/architect` | Запускает `architect` — пишет ADRs в `process/<slug>/adr/` | `verdicts-applied` (или `spec-reviewed` с лог-строкой `no-action-needed`) |
-| `/review-arch` | Запускает `arch-reviewer` — независимое ревью; **не читает `spec-review.md`** | `arch-proposed` |
-| `/implement <scope>` | (опц.) Запускает `implementer` — узкий кусок кода+тестов по утверждённым ADR; ≥5 тестов, цитирование ADR-IDs в коде | `arch-reviewed`, `implemented` |
-| `/audit-code <paths>` | Запускает `code-auditor` — file:line аудит реализации против спеки и ADR | `arch-reviewed`, `implemented`, `audit-done` |
+| `/conclave:start <slug>` | Создаёт `process/<slug>/`, копирует `STATE.md`, выставляет `stage: intake`, пишет `process/CURRENT` | (нет активного проекта) |
+| `/conclave:status` | Read-only — показывает stage, чек-лист, артефакты, pending action | любая |
+| `/conclave:interview` | Запускает сабагент `interviewer` для роста `spec.md` | `intake`, `interview` |
+| `/conclave:challenge-spec` | Запускает `spec-skeptic` — ≥7 возражений + двупроходная самооценка | `spec-approved` |
+| `/conclave:architect` | Запускает `architect` — пишет ADRs в `process/<slug>/adr/` | `verdicts-applied` (или `spec-reviewed` с лог-строкой `no-action-needed`) |
+| `/conclave:review-arch` | Запускает `arch-reviewer` — независимое ревью; **не читает `spec-review.md`** | `arch-proposed` |
+| `/conclave:implement <scope>` | (опц.) Запускает `implementer` — узкий кусок кода+тестов по утверждённым ADR; ≥5 тестов, цитирование ADR-IDs в коде | `arch-reviewed`, `implemented` |
+| `/conclave:audit-code <paths>` | Запускает `code-auditor` — file:line аудит реализации против спеки и ADR | `arch-reviewed`, `implemented`, `audit-done` |
 
-Stage-валидация дублирована: внутри тела команды + в PreToolUse хуке `.claude/hooks/state-guard.sh` (belt-and-suspenders).
+Stage-валидация дублирована: внутри тела команды + в PreToolUse хуке `hooks/state-guard.sh`, привязанном через плагинный `hooks/hooks.json` (belt-and-suspenders).
 
 ## Где живут артефакты
 
@@ -96,7 +110,7 @@ process/
 
 ## Возобновляемость
 
-Пайплайн полностью основан на файлах. Закройте сессию, откройте `claude` снова, выполните `/status` — оно прочтёт `process/CURRENT` и покажет stage, артефакты и `Pending human action`. Продолжайте с команды, разрешённой для текущей stage. Контекст основного агента не несёт состояния; всё в `STATE.md` и артефактах.
+Пайплайн полностью основан на файлах. Закройте сессию, откройте `claude` снова, выполните `/conclave:status` — оно прочтёт `process/CURRENT` и покажет stage, артефакты и `Pending human action`. Продолжайте с команды, разрешённой для текущей stage. Контекст основного агента не несёт состояния; всё в `STATE.md` и артефактах.
 
 ## Требования к окружению
 
@@ -107,7 +121,7 @@ process/
 
 ## Ручное применение spec-review вердиктов (важно)
 
-Это единственный HITL-переход, который сабагенты НЕ выполняют сами. Алгоритм после `/challenge-spec`:
+Это единственный HITL-переход, который сабагенты НЕ выполняют сами. Алгоритм после `/conclave:challenge-spec`:
 
 1. Прочитайте `process/<slug>/spec-review.md`.
 2. Для каждого пронумерованного objection пометьте у себя в голове или прямо в файле: **accepted / rejected / deferred**.
@@ -116,15 +130,28 @@ process/
    - Замените в frontmatter `stage: spec-reviewed` на `stage: verdicts-applied`.
    - Поставьте крестик в чек-листе: `- [x] verdicts-applied — <today>`.
    - Допишите в `## Log`: `- <today HH:MM> — verdicts applied (accepted: N, rejected: M, deferred: K)`.
-5. Запустите `/architect`.
+5. Запустите `/conclave:architect`.
 
-Альтернативный путь (вердикты признаны не требующими действий): оставьте `stage: spec-reviewed`, допишите в лог строку, содержащую подстроку `no-action-needed`, и запустите `/architect` — команда это распознает.
+Альтернативный путь (вердикты признаны не требующими действий): оставьте `stage: spec-reviewed`, допишите в лог строку, содержащую подстроку `no-action-needed`, и запустите `/conclave:architect` — команда это распознает.
+
+## Структура плагина
+
+```
+.claude-plugin/plugin.json   # манифест плагина (name, version, author)
+agents/*.md                  # канонические системные промпты ролей
+commands/*.md                # тела slash-команд (зовутся как /conclave:<name>)
+skills/<name>/SKILL.md       # скиллы (шаблоны, рубрика ревью)
+hooks/state-guard.sh         # PreToolUse валидация переходов
+hooks/hooks.json             # привязка хука к Task tool
+templates/*.template.md      # каноны артефактов (spec, ADR, reviews, ...)
+```
+
+Внутри agents/commands/skills все ссылки на шаблоны идут через `${CLAUDE_PLUGIN_ROOT}/templates/...` — Claude Code подставляет это автоматически в момент загрузки плагина.
 
 ## Что дальше
 
 - `README.md` — полное описание процесса, ролей и открытых дизайн-решений (для ревьюера).
 - `docs/decisions.md` — пост-морт и компромиссы.
-- `.claude/agents/*.md` — канонические системные промпты ролей.
-- `.claude/commands/*.md` — тела slash-команд.
-- `.claude/hooks/state-guard.sh` — PreToolUse валидация переходов.
-- `docs/templates/*.template.md` — каноны артефактов.
+- `agents/*.md`, `commands/*.md`, `skills/*/SKILL.md` — содержимое плагина.
+- `hooks/state-guard.sh` + `hooks/hooks.json` — PreToolUse валидация переходов.
+- `templates/*.template.md` — каноны артефактов.

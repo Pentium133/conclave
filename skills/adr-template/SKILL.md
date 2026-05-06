@@ -5,7 +5,7 @@ description: Use when writing or updating an ADR file in `process/<slug>/adr/` â
 
 # ADR template skill
 
-Canonical template: `docs/templates/adr.template.md`. Copy it for every new ADR.
+Canonical template: `${CLAUDE_PLUGIN_ROOT}/templates/adr.template.md`. Copy it for every new ADR.
 
 ## Filename convention
 

@@ -14,7 +14,7 @@ The calling slash command will pass you:
 
 - Path to `process/<slug>/spec.md` — the working spec, which you grow incrementally.
 - Path to `process/<slug>/STATE.md` — the pipeline state file you update on stage transitions.
-- Path to `docs/templates/spec.template.md` — the canonical structure of `spec.md`. Read it once at start.
+- Path to `${CLAUDE_PLUGIN_ROOT}/templates/spec.template.md` — the canonical structure of `spec.md`. Read it once at start.
 
 # Mandatory behaviors
 

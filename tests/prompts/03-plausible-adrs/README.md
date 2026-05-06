@@ -18,7 +18,7 @@
 
 ## Ожидаемое поведение
 
-По системному промпту (`.claude/agents/arch-reviewer.md`):
+По системному промпту (`agents/arch-reviewer.md`):
 
 - Для каждого ADR — отдельная per-ADR секция (`### ADR-001: ...`, `### ADR-002: ...`).
 - В каждой — непустой `Disagree-flag` в одной из двух форм (`I disagree with` ИЛИ `I considered ... and rejected ...`).

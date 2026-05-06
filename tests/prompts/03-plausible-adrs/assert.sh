@@ -40,7 +40,7 @@ FIXTURE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROC_DIR="$REPO_ROOT/process/$SLUG"
 INPUT_SPEC="$FIXTURE_DIR/input-spec.md"
 INPUT_ADRS="$FIXTURE_DIR/input-adrs"
-STATE_TPL="$REPO_ROOT/docs/templates/STATE.template.md"
+STATE_TPL="$REPO_ROOT/templates/STATE.template.md"
 TODAY="$(date '+%Y-%m-%d')"
 NOW="$(date '+%Y-%m-%d %H:%M')"
 

@@ -5,7 +5,7 @@ description: Use when filling or updating `process/<slug>/spec.md` — provides 
 
 # Spec template skill
 
-Canonical template: `docs/templates/spec.template.md`. Always start by copying it.
+Canonical template: `${CLAUDE_PLUGIN_ROOT}/templates/spec.template.md`. Always start by copying it.
 
 ## Required sections checklist
 

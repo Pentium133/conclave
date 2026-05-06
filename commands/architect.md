@@ -31,7 +31,7 @@ Invoke the `architect` subagent via the Task tool (`subagent_type: architect`). 
 
 - `process/<slug>/spec.md` — source of FR-N / NFR-KIND-N IDs (read-only).
 - `process/<slug>/spec-review.md` — applied verdicts (read-only). Every `block` and `major` objection must be addressed.
-- `docs/templates/adr.template.md` — exact ADR structure.
+- `${CLAUDE_PLUGIN_ROOT}/templates/adr.template.md` — exact ADR structure.
 - `process/<slug>/STATE.md` — the architect owns updating it.
 - Target directory: `process/<slug>/adr/` — write `NNN-<topic>.md` files here.
 

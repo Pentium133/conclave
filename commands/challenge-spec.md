@@ -27,7 +27,7 @@ and stop.
 Invoke the `spec-skeptic` subagent via the Task tool (`subagent_type: spec-skeptic`). Pass it a prompt with these absolute paths and instructions:
 
 - `process/<slug>/spec.md` — read-only input. The skeptic must NOT modify it.
-- `docs/templates/spec-review.template.md` — exact output structure.
+- `${CLAUDE_PLUGIN_ROOT}/templates/spec-review.template.md` — exact output structure.
 - `process/<slug>/STATE.md` — the skeptic owns updating it on completion.
 
 Tell the subagent: «You own writing `process/<slug>/spec-review.md` and updating `STATE.md` (set `stage: spec-reviewed`, tick the checkbox, update Artifacts, append log line). The slash command does not touch these files.»

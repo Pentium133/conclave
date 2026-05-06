@@ -6,7 +6,7 @@
 
 ## Ожидаемое поведение
 
-По системному промпту (`.claude/agents/interviewer.md`):
+По системному промпту (`agents/interviewer.md`):
 
 - **3-attempt rule** (пункт 6): после трёх попыток нажать на конкретный ответ — `interviewer` пишет в `spec.md` строку `[ASSUMED: <value> — reason: developer did not commit ...]` и идёт дальше. Все ассумпшены сводятся в `## Open assumptions`.
 - **Не принимает «TBD» / «later» / «figure out»** (раздел `# Forbidden`).

@@ -15,7 +15,7 @@
 
 ## Ожидаемое поведение
 
-По системному промпту (`.claude/agents/spec-skeptic.md`):
+По системному промпту (`agents/spec-skeptic.md`):
 
 - Pass 1: ≥7 пронумерованных objections, каждый со scenario / fix / refs.
 - Pass 2: self-rating для каждого, ≥5 deep+medium должны выжить.

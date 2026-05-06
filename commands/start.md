@@ -35,7 +35,7 @@ If the normalized slug differs from the raw input, tell the user once: «Normali
 ## Actions
 
 1. Create directories: `process/<slug>/` and `process/<slug>/adr/`.
-2. Copy `docs/templates/STATE.template.md` to `process/<slug>/STATE.md`.
+2. Copy `${CLAUDE_PLUGIN_ROOT}/templates/STATE.template.md` to `process/<slug>/STATE.md`.
 3. Edit `process/<slug>/STATE.md`:
    - Replace `<kebab-case-slug>` with the slug.
    - Replace the `stage:` line with `stage: intake`.

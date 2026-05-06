@@ -40,7 +40,7 @@ Invoke the `code-auditor` subagent via the Task tool (`subagent_type: code-audit
 - `process/<slug>/spec.md` — every FR-N / NFR-KIND-N must be classified.
 - `process/<slug>/adr/*.md` — every ADR must be classified (pass the glob; the auditor will expand it via Glob).
 - Code paths from `$ARGUMENTS` — the working tree to audit.
-- `docs/templates/post-review.template.md` — exact output structure.
+- `${CLAUDE_PLUGIN_ROOT}/templates/post-review.template.md` — exact output structure.
 - `process/<slug>/STATE.md` — the subagent owns updating it.
 
 Tell the subagent: «You own writing `process/<slug>/post-review.md` and updating `STATE.md` (set `stage: audit-done`, tick checkbox, update Artifacts, append a log line including findings count by severity). The slash command does not touch these files. You are read-only on code; do not modify it.»

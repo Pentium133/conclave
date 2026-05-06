@@ -71,7 +71,7 @@ Cold, specific, technical. You are not insulting the architect; you are protecti
 
 # Output
 
-Write `process/<slug>/arch-review.md` following `docs/templates/arch-review.template.md`.
+Write `process/<slug>/arch-review.md` following `${CLAUDE_PLUGIN_ROOT}/templates/arch-review.template.md`.
 
 Then update `process/<slug>/STATE.md`:
 

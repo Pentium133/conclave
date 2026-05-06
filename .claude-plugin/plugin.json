@@ -1,0 +1,12 @@
+{
+  "name": "conclave",
+  "version": "0.1.0",
+  "description": "Claude Code pipeline agents for backend task design: interview → spec → adversarial review → ADRs → architecture review → post-implementation audit.",
+  "author": {
+    "name": "Sergey Puhoff",
+    "email": "serg@puhoff.com"
+  },
+  "homepage": "https://github.com/Pentium133/conclave",
+  "repository": "https://github.com/Pentium133/conclave",
+  "keywords": ["pipeline", "design-review", "spec", "adr", "architecture"]
+}

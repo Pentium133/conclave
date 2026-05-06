@@ -25,7 +25,7 @@ and stop.
 ## Pre-flight
 
 1. If `process/<slug>/spec.md` does not exist:
-   - Copy `docs/templates/spec.template.md` → `process/<slug>/spec.md`.
+   - Copy `${CLAUDE_PLUGIN_ROOT}/templates/spec.template.md` → `process/<slug>/spec.md`.
    - Replace the `# Spec: <slug>` heading with `# Spec: <slug>`.
 2. If the current stage is `intake`:
    - In `STATE.md`, replace `stage: intake` with `stage: interview`.
@@ -40,7 +40,7 @@ Invoke the `interviewer` subagent via the Task tool (`subagent_type: interviewer
 
 - `process/<slug>/spec.md` — working spec, the agent grows it.
 - `process/<slug>/STATE.md` — the agent owns the final transition to `stage: spec-approved` once the developer signs off in §Approval.
-- `docs/templates/spec.template.md` — read once at start.
+- `${CLAUDE_PLUGIN_ROOT}/templates/spec.template.md` — read once at start.
 
 Tell the subagent: «You own updates to `spec.md`. The slash command has already set `stage: interview`. When the developer writes `approve` and a date in §Approval, you set `stage: spec-approved`, tick the corresponding checkbox, update Artifacts, and append a log line.»
 

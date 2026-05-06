@@ -32,7 +32,7 @@ usage() {
     cat <<'EOF'
 tests/prompts/run-all.sh — antisycophancy regression suite driver.
 
-Three fixtures verify that subagent prompts in .claude/agents/ enforce their
+Three fixtures verify that subagent prompts in agents/ enforce their
 antisycophancy mechanisms on adversarial inputs:
   01 evasive-developer    interviewer  vs evasive answers          (interactive only)
   02 soft-spec            spec-skeptic vs deliberately soft spec   (headless or interactive)
@@ -185,7 +185,7 @@ elif [[ -t 0 ]]; then
 else
     printf ' (auto: stdin is not a TTY — likely CI)\n'
 fi
-printf '\nThis suite verifies that subagent prompts in .claude/agents/ actually\n'
+printf '\nThis suite verifies that subagent prompts in agents/ actually\n'
 printf 'enforce their antisycophancy mechanisms on adversarial inputs.\n\n'
 printf 'Test slugs:\n'
 printf '  01 evasive-developer  : %s\n' "$SLUG_01"

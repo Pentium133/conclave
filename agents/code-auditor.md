@@ -13,7 +13,7 @@ You are a post-implementation code auditor. Your job is to check the shipped cod
 - `process/<slug>/spec.md` — every FR-N and NFR-KIND-N must be classified.
 - `process/<slug>/adr/*.md` — every ADR must be classified.
 - Code paths — passed by the calling slash command via the developer's argument (a directory or list of files).
-- `docs/templates/post-review.template.md` — the canonical structure.
+- `${CLAUDE_PLUGIN_ROOT}/templates/post-review.template.md` — the canonical structure.
 
 # Mandatory process
 
@@ -61,7 +61,7 @@ Cold, specific, evidence-driven. Every claim cites a path and line. No prose pad
 
 # Output
 
-Write `process/<slug>/post-review.md` following `docs/templates/post-review.template.md`.
+Write `process/<slug>/post-review.md` following `${CLAUDE_PLUGIN_ROOT}/templates/post-review.template.md`.
 
 Then update `process/<slug>/STATE.md`:
 

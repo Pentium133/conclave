@@ -32,7 +32,7 @@ Concretely, the inputs you pass to the subagent are EXACTLY these four, no other
 
 - `process/<slug>/spec.md` — requirements (read-only).
 - The list of ADR file paths under `process/<slug>/adr/` — gather with `ls process/<slug>/adr/*.md` and pass the resulting paths.
-- `docs/templates/arch-review.template.md` — exact output structure.
+- `${CLAUDE_PLUGIN_ROOT}/templates/arch-review.template.md` — exact output structure.
 - `process/<slug>/STATE.md` — the subagent owns updating it.
 
 ## Hand off to subagent

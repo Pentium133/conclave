@@ -1,6 +1,18 @@
-# Пайплайн агентов Claude Code для проектирования бэкенд-задач
+# Conclave — пайплайн агентов Claude Code для проектирования бэкенд-задач
 
-Этот репозиторий — **конфигурация Claude Code**, превращающая `claude` в управляемый процесс проектирования: интервью → спека → адверсариальное ревью → ADR → ревью архитектуры → пост-ревью кода. Сам бэкенд не пишется; артефакт, который оценивается, это `.claude/`-конфигурация и сопровождающие документы (`CLAUDE.md`, шаблоны, рефлексия).
+Этот репозиторий — **Claude Code плагин `conclave`**, превращающий `claude` в управляемый процесс проектирования: интервью → спека → адверсариальное ревью → ADR → ревью архитектуры → пост-ревью кода. Сам бэкенд не пишется; артефакт, который оценивается, это содержимое плагина (`agents/`, `commands/`, `skills/`, `hooks/`, `templates/`) и сопровождающие документы (`CLAUDE.md`, рефлексия).
+
+Все команды живут в namespace `/conclave:*` — `/conclave:start`, `/conclave:interview`, `/conclave:architect` и т.д.
+
+**Установка (как локальный плагин):**
+
+```bash
+# в любой сессии Claude Code:
+/plugin marketplace add /path/to/this/repo
+/plugin install conclave@<marketplace-name>
+```
+
+После установки плагин доступен в любом проекте; артефакты пайплайна (`process/<slug>/...`) пишутся в CWD активного проекта.
 
 Если вы только что клонировали репозиторий и хотите запустить пайплайн — читайте `CLAUDE.md`. Этот README отвечает на вопрос «как устроен процесс и почему именно так».
 
@@ -21,50 +33,50 @@
 | 5 | Реализация (опц.) | `implementer` | `src/<files>, tests/<files>` (≥5 тестов, ADR-IDs в комментариях) | `code-auditor` |
 | 6 | Пост-ревью кода | `code-auditor` | `post-review.md` (file:line evidence) | разработчик чинит/мёржит |
 
-Канонические промпты — в `.claude/agents/<name>.md`. Канонические шаблоны артефактов — в `docs/templates/`.
+Канонические промпты — в `agents/<name>.md`. Канонические шаблоны артефактов — в `templates/`.
 
 ---
 
 ## 2. Роли в деталях
 
-Системные промпты живут в `.claude/agents/` — здесь только конспект. Когда меняется поведение, правится файл агента, не этот README.
+Системные промпты живут в `agents/` — здесь только конспект. Когда меняется поведение, правится файл агента, не этот README.
 
-### 2.1 `interviewer` (`.claude/agents/interviewer.md`)
+### 2.1 `interviewer` (`agents/interviewer.md`)
 
 - **Цель:** вытащить FR-N и NFR-KIND-N в `spec.md`. Не дать разработчику уйти в реализацию.
 - **Обязано:** один вопрос за ход; multiple choice по умолчанию; систематически обойти все 9 NFR-категорий (latency / throughput / availability / durability / security / observability / capacity / dependencies / deployment); при уклончивом ответе переспросить с тремя конкретными опциями; правило 3 попыток → пишем `[ASSUMED: ...]`; surface противоречий с цитированием обеих строк.
 - **Запрещено:** предлагать технологии, фреймворки, ретрай-политики; задавать несколько вопросов за один ход; принимать «потом разберёмся» вместо `[ASSUMED]`; закрывать интервью пока есть пустые NFR-секции.
 - **Артефакт:** `process/<slug>/spec.md` + транзит `STATE.md` к `stage: spec-approved` после ручного `approve` от разработчика.
 
-### 2.2 `spec-skeptic` (`.claude/agents/spec-skeptic.md`)
+### 2.2 `spec-skeptic` (`agents/spec-skeptic.md`)
 
 - **Цель:** найти 3am production failures, которые автор спеки не увидел. Изоляция — читает только `spec.md`, не видит интервью-диалог.
 - **Обязано:** Pass 1 — ≥7 пронумерованных objections, каждое с `severity / area / scenario / what to fix / refs`; Pass 2 — самооценка `deep / medium / shallow` с одним предложением обоснования; verdict выдавать только если ≥5 objections выжили как `deep` или `medium`. Иначе пишет «Insufficient depth — Pass 1 must be redone».
 - **Запрещено:** «Looks good overall», generic «consider X», agreeing with author, скип Pass 2, редактирование `spec.md`.
 - **Артефакт:** `process/<slug>/spec-review.md`. Транзит `STATE.md → stage: spec-reviewed`.
 
-### 2.3 `architect` (`.claude/agents/architect.md`)
+### 2.3 `architect` (`agents/conclave:architect.md`)
 
 - **Цель:** превратить спеку и применённые вердикты в набор ADR с явными trade-off’ами.
 - **Обязано:** один ADR на одно решение (один файл `process/<slug>/adr/NNN-<topic>.md`); ≥2 альтернативы с оценкой по 4 осям (`cost / complexity / correctness / operability`); `## Decision` цитирует FR-N / NFR-KIND-N из спеки; `## Consequences ### Negative` непустой; `block` и `major` objections из `spec-review.md` явно адресуются (в `## Context` или `## Consequences`).
 - **Запрещено:** ADR с одной альтернативой; «индустриальный стандарт» как обоснование; пустой `### Negative`; вымышленные FR/NFR-IDs; редактирование `spec.md` или `spec-review.md`.
 - **Артефакт:** `process/<slug>/adr/NNN-*.md`. Транзит `STATE.md → stage: arch-proposed`.
 
-### 2.4 `arch-reviewer` (`.claude/agents/arch-reviewer.md`)
+### 2.4 `arch-reviewer` (`agents/arch-reviewer.md`)
 
 - **Цель:** независимое ревью архитектуры. Самое важное правило — **не читать `spec-review.md`**. Реверс-инжиниринг не нужен; нужна вторая, не выровненная позиция.
 - **Обязано:** per-ADR секция с `verdict (accept/challenge/reject)` + ≥3 техническими аргументами + ≥2 3am-сценариями + операционными проблемами + **disagree-flag**. Disagree-flag обязателен в каждой per-ADR секции в одной из двух форм: «I disagree with: ...» либо «I considered the following objections [≥2] and rejected them because [...]». Cross-cutting секция: observability, failure isolation, deployment. Финальный вердикт: `block / iterate / approve`.
 - **Запрещено:** читать `spec-review.md` (этот запрет — load-bearing prompt-rule, см. §6.3); approve без непустого disagree-flag; generic «consider monitoring»; редактирование ADR.
 - **Артефакт:** `process/<slug>/arch-review.md`. Транзит `STATE.md → stage: arch-reviewed`.
 
-### 2.5 `implementer` (`.claude/agents/implementer.md`) — опциональный
+### 2.5 `implementer` (`agents/implementer.md`) — опциональный
 
 - **Цель:** реализовать узкий кусок (один компонент / класс / эндпоинт) ровно по утверждённой спеке и ADR-ам. Не дизайнер; следует решениям архитектора буквально.
 - **Обязано:** scope discipline — строго один чанк, заданный разработчиком в `$ARGUMENTS`; ADR fidelity — каждый выбор, имя которого названо в ADR (retry, backoff, классификация ошибок и т.п.), реализован дословно, ADR-ID цитируется в комментарии у соответствующего кода; TDD — тесты сначала, прогон, реализация, прогон; ≥5 тестов, покрывающих happy path, error-paths из ADR-classification и edge cases; код под `src/`, тесты под `tests/`; self-contained — никаких сетевых вызовов в тестах, моки внешних сервисов; перед тем как сказать «готово» — реально прогнать тесты и увидеть зелёный summary.
 - **Запрещено:** добавлять фичи, которые разработчик не просил (даже если спека их упоминает); проектировать (если спека молчит — спросить разработчика, не решать самому); скипать тесты («малое изменение» не оправдание); трогать что-либо вне `src/`, `tests/`, `requirements.txt` и `STATE.md` (никаких правок спеки/ADR/ревью); cargo-cult из общих знаний — если хочется добавить ретрай на «connection-reset», убедись что ADR его классифицирует, иначе спросить.
 - **Артефакт:** файлы под `src/<chunk>/` и `tests/test_<chunk>.py`, опционально `requirements.txt`. Транзит `STATE.md → stage: implemented`.
 
-### 2.6 `code-auditor` (`.claude/agents/code-auditor.md`)
+### 2.6 `code-auditor` (`agents/code-auditor.md`)
 
 - **Цель:** проверить реализацию против спеки и ADR с file:line-цитированием каждого утверждения. Read-only.
 - **Обязано:** заполнить три таблицы целиком — все FR-N, все NFR-KIND-N, все ADR-IDs (статусы: `met / not met / not testable`, `implemented / deviated / not implemented`); каждая строка имеет `file.ext:LN` evidence; findings с severity и suggested fix; vердикт `ship / fix-required / reject`.
@@ -83,9 +95,9 @@
 | `arch-review.md` | `arch-reviewer` | разработчик (решает go/iterate/kill), `implementer` (читает «Required follow-ups»), `code-auditor` опционально | — |
 | `src/<files>, tests/<files>` | `implementer` (опц.) | `code-auditor` | — |
 | `post-review.md` | `code-auditor` | разработчик | — |
-| `STATE.md` | каждый сабагент обновляет на своей стадии | `/status`, хук `state-guard.sh`, slash-команды для предусловий | — |
+| `STATE.md` | каждый сабагент обновляет на своей стадии | `/conclave:status`, хук `state-guard.sh`, slash-команды для предусловий | — |
 
-Изоляция `arch-reviewer` от `spec-review.md` явно прописана в трёх местах: системный промпт агента, тело команды `/review-arch`, рубрика `.claude/skills/review-rubric/SKILL.md`. См. §6.3 — это load-bearing.
+Изоляция `arch-reviewer` от `spec-review.md` явно прописана в трёх местах: системный промпт агента, тело команды `/conclave:review-arch`, рубрика `skills/review-rubric/SKILL.md`. См. §6.3 — это load-bearing.
 
 ---
 
@@ -95,7 +107,7 @@
 
 | # | Когда | Что делает разработчик | Зачем |
 |---|---|---|---|
-| 1 | Во время `/interview` | Отвечает на вопросы интервьюера | Иначе нет требований |
+| 1 | Во время `/conclave:interview` | Отвечает на вопросы интервьюера | Иначе нет требований |
 | 2 | После `spec.md` | Пишет `approve <date>` в `§Approval` | Подтверждает, что спека отражает реальные требования. Без апрува сабагент не двинет stage в `spec-approved`. |
 | 3 | После `spec-review.md` | Применяет вердикты к `spec.md` и **вручную** ставит `stage: verdicts-applied` (либо лог-строку `no-action-needed`) | Это интерпретирующее решение — какие objections валидны для этой задачи; модель не должна решать за разработчика. |
 | 4 | После каждого ADR / всего набора | Если architect оставил альтернативы открытыми — разработчик выбирает | ADR может корректно описать развилку, но не закрыть её, если требуется бизнес-вход. |
@@ -109,7 +121,7 @@
 
 | Стадия | Что значит «готово» |
 |---|---|
-| `intake` | `process/<slug>/STATE.md` создан, `process/CURRENT = <slug>`, `Pending human action` указывает на `/interview`. |
+| `intake` | `process/<slug>/STATE.md` создан, `process/CURRENT = <slug>`, `Pending human action` указывает на `/conclave:interview`. |
 | `interview` | Все 9 NFR-секций спеки содержат либо конкретный `NFR-KIND-N`, либо `[ASSUMED: ...]`-строку. Все `[ASSUMED]` сводятся в `## Open assumptions`. |
 | `spec-approved` | Разработчик дописал в `§Approval` дословно `approve` + дата. Интервьюер обновил `STATE.md`. |
 | `spec-reviewed` | `spec-review.md` содержит ≥7 objections; ≥5 переживают Pass 2 как `deep`/`medium`; verdict записан. Если этот гейт не пройден — verdict не пишется и стадия не закрывается. |
@@ -118,7 +130,7 @@
 | `arch-reviewed` | `arch-review.md` имеет per-ADR секцию для каждого ADR (verdict + ≥3 аргумента + ≥2 3am-сценария + disagree-flag), cross-cutting секцию и финальный verdict. |
 | `audit-done` | Все FR/NFR/ADR классифицированы со статусом и file:line evidence. Findings с severity. Verdict `ship`/`fix-required`/`reject`. |
 
-Эти правила одновременно вшиты в системные промпты сабагентов (как обязательные поведения), в шаблоны (`docs/templates/*.template.md` — структурный каркас) и в рубрику ревью (`.claude/skills/review-rubric/SKILL.md`).
+Эти правила одновременно вшиты в системные промпты сабагентов (как обязательные поведения), в шаблоны (`templates/*.template.md` — структурный каркас) и в рубрику ревью (`skills/review-rubric/SKILL.md`).
 
 ---
 
@@ -131,11 +143,11 @@
 Не «всё subagents». Маппинг следующий:
 
 - **Subagents — для ролей.** Каждый из 5 этапов это отдельная роль с собственным системным промптом, изолированным контекстом и собственным набором запретов. Это естественно ложится на сабагентов: контекст-изоляция бесплатна, переключение ролей чёткое, system prompt задаёт характер.
-- **Slash commands — для переходов.** `/start`, `/interview`, `/challenge-spec`, `/architect`, `/review-arch`, `/audit-code`, `/status` — это «глаголы» пайплайна. Они валидируют stage, готовят файлы (копируют шаблоны, создают директории), вызывают нужный сабагент через Task. Это тонкие wrapper-команды без бизнес-логики ролей. Команда — детерминированный шаг, она не должна «думать».
-- **Skills — для переиспользуемых конвенций.** `spec-template`, `adr-template`, `review-rubric` лежат в `.claude/skills/`. Они описывают **дисциплину** артефакта: какие секции обязательны, какие IDs, какие antiprompts (например, «Looks good overall» — banned). Skill ссылается на канонический шаблон в `docs/templates/`, не дублируя его. Так у обоих ревьюеров (`spec-skeptic` и `arch-reviewer`) одна и та же рубрика глубины и формула disagree-flag.
-- **Hooks — для валидации.** `.claude/hooks/state-guard.sh` — PreToolUse-хук на Task. Он независимо проверяет, что `(subagent_type, stage)` валидно, и блокирует вызов если нет. Это belt-and-suspenders поверх инлайн-валидации в командах: даже если кто-то вызовет сабагент напрямую (через Task minus команда), хук не пропустит. Хук — единственный примитив, который видит **все** вызовы Task и может централизованно сказать «нет».
+- **Slash commands — для переходов.** `/conclave:start`, `/conclave:interview`, `/conclave:challenge-spec`, `/conclave:architect`, `/conclave:review-arch`, `/conclave:audit-code`, `/conclave:status` — это «глаголы» пайплайна. Они валидируют stage, готовят файлы (копируют шаблоны, создают директории), вызывают нужный сабагент через Task. Это тонкие wrapper-команды без бизнес-логики ролей. Команда — детерминированный шаг, она не должна «думать».
+- **Skills — для переиспользуемых конвенций.** `spec-template`, `adr-template`, `review-rubric` лежат в `skills/`. Они описывают **дисциплину** артефакта: какие секции обязательны, какие IDs, какие antiprompts (например, «Looks good overall» — banned). Skill ссылается на канонический шаблон в `templates/`, не дублируя его. Так у обоих ревьюеров (`spec-skeptic` и `arch-reviewer`) одна и та же рубрика глубины и формула disagree-flag.
+- **Hooks — для валидации.** `hooks/state-guard.sh` — PreToolUse-хук на Task. Он независимо проверяет, что `(subagent_type, stage)` валидно, и блокирует вызов если нет. Это belt-and-suspenders поверх инлайн-валидации в командах: даже если кто-то вызовет сабагент напрямую (через Task minus команда), хук не пропустит. Хук — единственный примитив, который видит **все** вызовы Task и может централизованно сказать «нет».
 
-Один и тот же функциональный кусок не дублируется в двух примитивах. Например, дисциплина «≥7 objections + Pass 2» живёт в одном месте — в `spec-skeptic` агенте и в `review-rubric` skill (на которую агент ссылается); slash-команда `/challenge-spec` про это не знает.
+Один и тот же функциональный кусок не дублируется в двух примитивах. Например, дисциплина «≥7 objections + Pass 2» живёт в одном месте — в `spec-skeptic` агенте и в `review-rubric` skill (на которую агент ссылается); slash-команда `/conclave:challenge-spec` про это не знает.
 
 ### 6.2 Обмен артефактами
 
@@ -143,10 +155,10 @@
 
 Это даёт **возобновляемость**. Сценарий:
 
-1. Разработчик запустил `/start payment-service`, прошёл интервью, получил `spec.md`, апрувнул, запустил `/challenge-spec`. Получил `spec-review.md`.
+1. Разработчик запустил `/conclave:start payment-service`, прошёл интервью, получил `spec.md`, апрувнул, запустил `/conclave:challenge-spec`. Получил `spec-review.md`.
 2. Закрыл ноутбук. Через 4 дня снова открыл `claude` в той же папке.
-3. Запустил `/status` — увидел `Project: payment-service / Stage: spec-reviewed / Pending: apply verdicts and set stage: verdicts-applied`.
-4. Применил вердикты, вручную поправил stage, запустил `/architect` — продолжил с того же места.
+3. Запустил `/conclave:status` — увидел `Project: payment-service / Stage: spec-reviewed / Pending: apply verdicts and set stage: verdicts-applied`.
+4. Применил вердикты, вручную поправил stage, запустил `/conclave:architect` — продолжил с того же места.
 
 Контекст основного агента может быть полностью утерян — состояние пайплайна целиком в `STATE.md` и артефактах.
 
@@ -156,13 +168,13 @@
 
 Это самое больное место подобных пайплайнов. Просто «попроси быть критичным» не работает. Конкретные техники, разложенные по местам кода:
 
-- **Изоляция контекстов через сабагентов.** Каждый ревьюер запускается в чистом контексте, без диалога, который произвёл артефакт. Это снимает «социальное давление» — нет «автора», с которым нужно соглашаться. (Все 5 ролей — отдельные сабагенты. См. секцию `tools` в каждом `.claude/agents/*.md`.)
-- **Квота ≥7 objections + Pass 2 с ≥5 выживших.** `spec-skeptic` обязан сначала **сгенерировать**, потом **самокритично рейтинговать**. Если квота не выполнена, агент пишет «Insufficient depth — Pass 1 must be redone» и не выдаёт verdict. (См. `.claude/agents/spec-skeptic.md` `# Mandatory two-pass process` и `# Verdict gate`; `.claude/skills/review-rubric/SKILL.md` `## Two-pass discipline`.)
-- **Двухпроходная глубинная рубрика deep/medium/shallow.** Pass 2 — это анти-padding-механизм. Generic «consider observability» помечается shallow и не учитывается в гейте. (См. `.claude/skills/review-rubric/SKILL.md` `## Depth rubric`.)
-- **3am production frame.** Системный промпт обоих ревьюеров буквально содержит фрейм «3am, production on fire». Каждый objection / scenario обязан быть формулируем в этой раме. Generic советы фрейм не выдерживают. (См. `.claude/agents/spec-skeptic.md` `# Frame`; `.claude/agents/arch-reviewer.md` `# Frame`.)
-- **Per-ADR disagree-flag с двумя именованными формами.** `arch-reviewer` обязан в каждой per-ADR секции занять одну из двух позиций: «I disagree with X because Y» **либо** «I considered objections [≥2] and rejected them because [...]». Пустой / уклончивый flag инвалидизирует весь review. Form 2 заставляет агент **придумать** возможные возражения, даже если он соглашается — это отрезает «looks good». (См. `.claude/agents/arch-reviewer.md` пункт 5 и `.claude/skills/review-rubric/SKILL.md` `## Disagree-flag conventions`.)
-- **Явный список запрещённых фраз.** «Looks good overall», «Good catch by the author», «Seems fine», «Consider X» без сценария — banned в обоих ревьюерах. (См. `.claude/skills/review-rubric/SKILL.md` `## Forbidden phrases`.)
-- **Жёсткая изоляция `arch-reviewer` от `spec-review.md`.** Чтобы получить две **не выровненные** позиции, второй ревьюер не должен видеть первого. Запрет прописан в трёх местах: системный промпт `arch-reviewer`, тело команды `/review-arch` (которая буквально не передаёт путь), рубрика. Claude Code не позволяет path-whitelist на Read для отдельного сабагента, поэтому запрет — prompt-load-bearing; повторение в трёх местах — митигация. (См. `.claude/agents/arch-reviewer.md` `# Inputs (and a hard isolation rule)`; `.claude/commands/review-arch.md` `## Critical isolation rule`.)
+- **Изоляция контекстов через сабагентов.** Каждый ревьюер запускается в чистом контексте, без диалога, который произвёл артефакт. Это снимает «социальное давление» — нет «автора», с которым нужно соглашаться. (Все 5 ролей — отдельные сабагенты. См. секцию `tools` в каждом `agents/*.md`.)
+- **Квота ≥7 objections + Pass 2 с ≥5 выживших.** `spec-skeptic` обязан сначала **сгенерировать**, потом **самокритично рейтинговать**. Если квота не выполнена, агент пишет «Insufficient depth — Pass 1 must be redone» и не выдаёт verdict. (См. `agents/spec-skeptic.md` `# Mandatory two-pass process` и `# Verdict gate`; `skills/review-rubric/SKILL.md` `## Two-pass discipline`.)
+- **Двухпроходная глубинная рубрика deep/medium/shallow.** Pass 2 — это анти-padding-механизм. Generic «consider observability» помечается shallow и не учитывается в гейте. (См. `skills/review-rubric/SKILL.md` `## Depth rubric`.)
+- **3am production frame.** Системный промпт обоих ревьюеров буквально содержит фрейм «3am, production on fire». Каждый objection / scenario обязан быть формулируем в этой раме. Generic советы фрейм не выдерживают. (См. `agents/spec-skeptic.md` `# Frame`; `agents/arch-reviewer.md` `# Frame`.)
+- **Per-ADR disagree-flag с двумя именованными формами.** `arch-reviewer` обязан в каждой per-ADR секции занять одну из двух позиций: «I disagree with X because Y» **либо** «I considered objections [≥2] and rejected them because [...]». Пустой / уклончивый flag инвалидизирует весь review. Form 2 заставляет агент **придумать** возможные возражения, даже если он соглашается — это отрезает «looks good». (См. `agents/arch-reviewer.md` пункт 5 и `skills/review-rubric/SKILL.md` `## Disagree-flag conventions`.)
+- **Явный список запрещённых фраз.** «Looks good overall», «Good catch by the author», «Seems fine», «Consider X» без сценария — banned в обоих ревьюерах. (См. `skills/review-rubric/SKILL.md` `## Forbidden phrases`.)
+- **Жёсткая изоляция `arch-reviewer` от `spec-review.md`.** Чтобы получить две **не выровненные** позиции, второй ревьюер не должен видеть первого. Запрет прописан в трёх местах: системный промпт `arch-reviewer`, тело команды `/conclave:review-arch` (которая буквально не передаёт путь), рубрика. Claude Code не позволяет path-whitelist на Read для отдельного сабагента, поэтому запрет — prompt-load-bearing; повторение в трёх местах — митигация. (См. `agents/arch-reviewer.md` `# Inputs (and a hard isolation rule)`; `commands/conclave:review-arch.md` `## Critical isolation rule`.)
 
 Сюда же ложатся и более мелкие приёмы: правило «3 попыток → `[ASSUMED]`» у интервьюера (вместо догадывания за разработчика), запрет `architect` придумывать FR/NFR-IDs которых нет в спеке, требование `code-auditor` всегда ссылаться на file:line вместо trust-by-ADR.
 
@@ -190,7 +202,7 @@ CI: `.github/workflows/prompt-regression.yml`, триггер `workflow_dispatch
 
 ### 6.5 Критерии завершения этапов
 
-См. §5 выше. Обобщая — критерий каждой стадии — **наличие конкретного артефакта с конкретной структурой** (а не «агенты согласились»). Структура задана шаблоном (`docs/templates/`). Структурную полноту проверяет следующий за ней сабагент — он откажется работать, если предыдущий артефакт не дозаполнен (например, `architect` падает, если в спеке нет FR-IDs, на которые он мог бы сослаться).
+См. §5 выше. Обобщая — критерий каждой стадии — **наличие конкретного артефакта с конкретной структурой** (а не «агенты согласились»). Структура задана шаблоном (`templates/`). Структурную полноту проверяет следующий за ней сабагент — он откажется работать, если предыдущий артефакт не дозаполнен (например, `architect` падает, если в спеке нет FR-IDs, на которые он мог бы сослаться).
 
 Альтернатива — «голосование агентов» — отвергнута: агенты системно склонны соглашаться (см. §6.3), голосование лишь маскирует это.
 
@@ -229,19 +241,19 @@ claude            # стартует Claude Code в этой папке
 
 | # | Действие | Тип | Что делает |
 |---|---|---|---|
-| 1 | `/start <slug>` | команда | Создаёт `process/<slug>/`, копирует `STATE.template.md`, ставит `stage: intake`, пишет `<slug>` в `process/CURRENT`. Пример slug: `deepseek-client`, `payment-service`. |
-| 2 | `/interview` | команда → subagent | Поднимает `interviewer`. Ставит `stage: interview`, копирует `spec.template.md` → `spec.md` если нет. |
+| 1 | `/conclave:start <slug>` | команда | Создаёт `process/<slug>/`, копирует `STATE.template.md`, ставит `stage: intake`, пишет `<slug>` в `process/CURRENT`. Пример slug: `deepseek-client`, `payment-service`. |
+| 2 | `/conclave:interview` | команда → subagent | Поднимает `interviewer`. Ставит `stage: interview`, копирует `spec.template.md` → `spec.md` если нет. |
 | 3 | Отвечать на вопросы интервьюера | **HITL — диалог** | Один вопрос за раз. На уклончивый ответ интервьюер переспрашивает с конкретными вариантами; после трёх попыток помечает `[ASSUMED: ...]`. Покрываются 9 NFR-категорий — пропустить нельзя. |
 | 4 | Написать `approve` в `process/<slug>/spec.md` § Approval | **HITL — текст в файле** | Это сигнал интервьюеру, что спека закрыта. Subagent сам ставит `stage: spec-approved` и обновляет `STATE.md`. |
-| 5 | `/challenge-spec` | команда → subagent | Поднимает `spec-skeptic` в изоляции (без диалога интервью). Two-pass: ≥7 возражений, потом самооценка deep/medium/shallow. Verdict только после ≥5 переживших Pass 2. Пишет `spec-review.md`. Subagent ставит `stage: spec-reviewed`. |
+| 5 | `/conclave:challenge-spec` | команда → subagent | Поднимает `spec-skeptic` в изоляции (без диалога интервью). Two-pass: ≥7 возражений, потом самооценка deep/medium/shallow. Verdict только после ≥5 переживших Pass 2. Пишет `spec-review.md`. Subagent ставит `stage: spec-reviewed`. |
 | 6 | Применить вердикты к `spec.md` | **HITL — правка файлов** | Прочитать `spec-review.md`, для каждого objection пометить `accepted` / `rejected` / `deferred` (можно прямо в `spec-review.md` рядом с objection). Обновить `spec.md` под accepted: добавить недостающие FR/NFR, разрешить противоречия, нанять цифры. |
 | 7 | Вручную поставить `stage: verdicts-applied` в `process/<slug>/STATE.md` | **HITL — единственный stage-переход вручную** | Открыть `STATE.md`, изменить YAML-фронт `stage: spec-reviewed` → `stage: verdicts-applied`, поставить галочку у `verdicts-applied` с датой, добавить лог-строку. Все остальные переходы делают subagents автоматически. |
-| 8 | `/architect` | команда → subagent | Поднимает `architect`. Видит и `spec.md`, и `spec-review.md`. Производит ADR-ы в `process/<slug>/adr/NNN-<topic>.md` — по одному на архитектурную развилку. ≥2 альтернативы на 4 осях, обязательная секция `### Negative`, обратные ссылки на FR/NFR-IDs. Subagent ставит `stage: arch-proposed`. |
+| 8 | `/conclave:architect` | команда → subagent | Поднимает `architect`. Видит и `spec.md`, и `spec-review.md`. Производит ADR-ы в `process/<slug>/adr/NNN-<topic>.md` — по одному на архитектурную развилку. ≥2 альтернативы на 4 осях, обязательная секция `### Negative`, обратные ссылки на FR/NFR-IDs. Subagent ставит `stage: arch-proposed`. |
 | 9 | (опц.) Выбрать вариант если архитектор оставил развилку | **HITL — точечно** | Если в каком-то ADR `## Decision` оставлен открытым, разработчик выбирает и фиксирует. |
-| 10 | `/review-arch` | команда → subagent | Поднимает `arch-reviewer` в **строгой изоляции**: видит только `spec.md` и ADR-ы, **НЕ читает `spec-review.md`**. Per-ADR вердикт + 3am-сценарии + операционные проблемы + **mandatory disagree-flag** (либо «I disagree with X», либо «I considered objections [...] and rejected them because [...]»). Финальный вердикт block/iterate/approve. Ставит `stage: arch-reviewed`. |
-| 11 | Решить go / iterate / kill | **HITL — финальный гейт перед кодом** | Прочитать `arch-review.md`. На `iterate` — править ADR-ы, перезапустить `/review-arch`. На `block` — назад к `/architect` или `/challenge-spec`. На `approve` — можно писать код. Дефолтный пайплайн на этом заканчивается. |
-| 12 | (опц.) `/implement <scope-description>` | команда → subagent | **Только если хотите прогнать `/audit-code` на реальном коде.** Поднимает `implementer`. Передать описание узкого куска: `/implement retry-handler` или `/implement deepseek-client class`. Subagent следует ADR, пишет тесты+код (≥5 тестов, моки внешних вызовов), цитирует ADR-IDs в комментариях, ставит `stage: implemented`. |
-| 13 | (после реализации) `/audit-code <paths...>` | команда → subagent | Поднимает `code-auditor`. Передать пути к коду как аргументы (`/audit-code src/retry.py src/client.py`). Заполняет таблицы FR/NFR/ADR с `file:line` evidence. Verdict: ship / fix-required / reject. Ставит `stage: audit-done`. Допустим на стадиях `arch-reviewed` (если реализация была вне пайплайна), `implemented` (после `/implement`), `audit-done` (повторный аудит). |
+| 10 | `/conclave:review-arch` | команда → subagent | Поднимает `arch-reviewer` в **строгой изоляции**: видит только `spec.md` и ADR-ы, **НЕ читает `spec-review.md`**. Per-ADR вердикт + 3am-сценарии + операционные проблемы + **mandatory disagree-flag** (либо «I disagree with X», либо «I considered objections [...] and rejected them because [...]»). Финальный вердикт block/iterate/approve. Ставит `stage: arch-reviewed`. |
+| 11 | Решить go / iterate / kill | **HITL — финальный гейт перед кодом** | Прочитать `arch-review.md`. На `iterate` — править ADR-ы, перезапустить `/conclave:review-arch`. На `block` — назад к `/conclave:architect` или `/conclave:challenge-spec`. На `approve` — можно писать код. Дефолтный пайплайн на этом заканчивается. |
+| 12 | (опц.) `/conclave:implement <scope-description>` | команда → subagent | **Только если хотите прогнать `/conclave:audit-code` на реальном коде.** Поднимает `implementer`. Передать описание узкого куска: `/conclave:implement retry-handler` или `/conclave:implement deepseek-client class`. Subagent следует ADR, пишет тесты+код (≥5 тестов, моки внешних вызовов), цитирует ADR-IDs в комментариях, ставит `stage: implemented`. |
+| 13 | (после реализации) `/conclave:audit-code <paths...>` | команда → subagent | Поднимает `code-auditor`. Передать пути к коду как аргументы (`/conclave:audit-code src/retry.py src/client.py`). Заполняет таблицы FR/NFR/ADR с `file:line` evidence. Verdict: ship / fix-required / reject. Ставит `stage: audit-done`. Допустим на стадиях `arch-reviewed` (если реализация была вне пайплайна), `implemented` (после `/conclave:implement`), `audit-done` (повторный аудит). |
 
 ### Где разработчик действует руками
 
@@ -249,19 +261,19 @@ claude            # стартует Claude Code в этой папке
 
 ### Resumability
 
-Закрыли сессию — открываете снова, `claude` в той же папке, `/status`. Команда читает `process/CURRENT` и `STATE.md` и говорит, на каком шаге остановились. Никакого скрытого состояния в контексте основного агента — всё на диске.
+Закрыли сессию — открываете снова, `claude` в той же папке, `/conclave:status`. Команда читает `process/CURRENT` и `STATE.md` и говорит, на каком шаге остановились. Никакого скрытого состояния в контексте основного агента — всё на диске.
 
 ### Окружение
 
-Никаких переменных окружения. Никаких машинно-специфичных зависимостей. Тестировано на macOS; должно работать на Linux. Бинарь `jq` опционален — `state-guard.sh` падает на `grep`-фолбэк если `jq` не найден. Хук `state-guard.sh` тестируется локально через `bash .claude/hooks/state-guard.test.sh` (10 сценариев перехода, все зелёные).
+Никаких переменных окружения. Никаких машинно-специфичных зависимостей. Тестировано на macOS; должно работать на Linux. Бинарь `jq` опционален — `state-guard.sh` падает на `grep`-фолбэк если `jq` не найден. Хук `state-guard.sh` тестируется локально через `bash hooks/state-guard.test.sh` (10 сценариев перехода, все зелёные).
 
 ---
 
 ## 10. Расширение
 
-- **Новый сабагент:** добавить файл в `.claude/agents/<name>.md` с YAML-фронт-маттером (`name`, `description`, `tools`). Если он должен быть гейтнут хуком — расширить `case "$SUBAGENT_TYPE"` и блок `case "$SUBAGENT_TYPE" in ... ALLOWED=...` в `state-guard.sh` + добавить тест в `state-guard.test.sh`.
-- **Новая slash-команда:** добавить файл в `.claude/commands/<name>.md` с YAML-фронт-маттером (`description`, `argument-hint`, `allowed-tools`). Внутри — секции `## Resolve active project`, `## Stage validation`, `## Hand off to subagent` (если применимо).
-- **Новый skill:** `.claude/skills/<name>/SKILL.md` с YAML `name` и `description`. Skill — это конвенция, а не код; пишите дисциплину артефакта, ссылайтесь на канонический шаблон в `docs/templates/`.
-- **Новый шаблон артефакта:** `docs/templates/<artifact>.template.md`. Канон один — не дублируйте в скиллах.
+- **Новый сабагент:** добавить файл в `agents/<name>.md` с YAML-фронт-маттером (`name`, `description`, `tools`). Если он должен быть гейтнут хуком — расширить `case "$SUBAGENT_TYPE"` и блок `case "$SUBAGENT_TYPE" in ... ALLOWED=...` в `state-guard.sh` + добавить тест в `state-guard.test.sh`.
+- **Новая slash-команда:** добавить файл в `commands/<name>.md` с YAML-фронт-маттером (`description`, `argument-hint`, `allowed-tools`). Внутри — секции `## Resolve active project`, `## Stage validation`, `## Hand off to subagent` (если применимо).
+- **Новый skill:** `skills/<name>/SKILL.md` с YAML `name` и `description`. Skill — это конвенция, а не код; пишите дисциплину артефакта, ссылайтесь на канонический шаблон в `templates/`.
+- **Новый шаблон артефакта:** `templates/<artifact>.template.md`. Канон один — не дублируйте в скиллах.
 
 См. также `docs/decisions.md` — пост-мортем, компромиссы и «что бы доделали при бесконечном времени».

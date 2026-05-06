@@ -27,35 +27,40 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git rev-parse:*)",
-      "Bash(bash .claude/hooks/*)",
+      "Bash(bash hooks/*)",
       "Read(./process/**)",
       "Read(./.claude/**)",
+      "Read(./.claude-plugin/**)",
+      "Read(./agents/**)",
+      "Read(./commands/**)",
+      "Read(./skills/**)",
+      "Read(./hooks/**)",
+      "Read(./templates/**)",
       "Read(./docs/**)",
       "Read(./CLAUDE.md)",
       "Read(./README.md)",
       "Write(./process/**)",
       "Write(./.claude/**)",
+      "Write(./.claude-plugin/**)",
+      "Write(./agents/**)",
+      "Write(./commands/**)",
+      "Write(./skills/**)",
+      "Write(./hooks/**)",
+      "Write(./templates/**)",
       "Write(./docs/**)",
       "Edit(./process/**)",
       "Edit(./.claude/**)",
+      "Edit(./.claude-plugin/**)",
+      "Edit(./agents/**)",
+      "Edit(./commands/**)",
+      "Edit(./skills/**)",
+      "Edit(./hooks/**)",
+      "Edit(./templates/**)",
       "Edit(./docs/**)"
     ],
     "deny": [
       "Bash(rm -rf:*)",
       "Bash(git push:*)"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/state-guard.sh"
-          }
-        ]
-      }
     ]
   }
 }
