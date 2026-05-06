@@ -1,0 +1,14 @@
+{
+  "name": "pentium133",
+  "owner": {
+    "name": "Sergey Puhoff",
+    "email": "serg@puhoff.com"
+  },
+  "plugins": [
+    {
+      "name": "conclave",
+      "source": "./",
+      "description": "Claude Code pipeline agents for backend task design: interview → spec → adversarial review → ADRs → architecture review → post-implementation audit."
+    }
+  ]
+}

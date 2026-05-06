@@ -8,15 +8,14 @@
 
 ## Установка
 
-Этот репозиторий и есть плагин. Установите его в Claude Code как локальный marketplace:
+В любой сессии Claude Code (клонировать репо локально не нужно):
 
-```bash
-# в любой сессии Claude Code:
-/plugin marketplace add /path/to/this/repo
-/plugin install conclave@<marketplace-name>
+```text
+/plugin marketplace add Pentium133/conclave
+/plugin install conclave@pentium133
 ```
 
-После этого команды `/conclave:*` будут доступны в любом проекте, а артефакты пайплайна (`process/<slug>/...`) будут писаться в CWD конкретного проекта.
+После этого команды `/conclave:*` доступны в любом проекте, а артефакты пайплайна (`process/<slug>/...`) пишутся в CWD конкретного проекта.
 
 ## Quickstart
 
