@@ -48,66 +48,95 @@ FR-5 — один запрос, одно тело сырого `application/octe
 
 Принят **streaming через AWS SDK v3 `@aws-sdk/lib-storage` `Upload` (S3 multipart) + кастомный `MagicBytePeekTransform` для FR-10**.
 
-Pipeline в upload-handler'е:
+Pipeline в upload-handler'е (учтён disagree-flag arch-review: peek ДО `CreateMultipartUpload`):
 
 ```ts
 import { pipeline } from 'node:stream/promises';
 import { Upload } from '@aws-sdk/lib-storage';
+import { PassThrough } from 'node:stream';
 
 @Put('/upload')
 async upload(@Req() req: FastifyRequest, @Res() reply: FastifyReply) {
-  const id = req.headers['x-image-id'] as string ?? randomUUIDv4();
+  const id = (req.headers['x-image-id'] as string | undefined) ?? randomUUIDv7();
   const ctrl = new AbortController();
   reply.raw.on('close', () => ctrl.abort());
 
-  const minRate = new MinRateTransform(125_000, 30_000, 1_048_576);  // ADR-005
-  const peek = new MagicBytePeekTransform();                           // ADR-007
-
-  // Step 4 (ADR-004): INSERT pending row
-  const storage = await this.storageRepo.activeStorage();
-  await this.fileRepo.insertPending(id, storage.id);
-
-  // Step 5: Stream to S3 via multipart Upload
-  const upload = new Upload({
-    client: this.s3,
-    params: {
-      Bucket: storage.bucket,
-      Key: id,
-      Body: peek,                              // peek проксирует stream дальше
-      IfNoneMatch: '*',                         // FR-12d safety net
-      ContentType: undefined,                   // detected_format заполнится после peek
-    },
-    partSize: 8 * 1024 * 1024,                  // 8 MiB
-    queueSize: 4,                               // 4 параллельных part'а
-    leavePartsOnError: false,
-    abortController: ctrl,
-  });
-
-  // Запускаем pipeline; magic-byte sniff произойдёт когда peek получит 32 байта
-  // (детали peek-логики и mapping detected_format → ContentType — в ADR-007).
+  // ADR-005: семафор перед всем остальным (fast-fail при насыщении pod'а).
+  await this.uploadSemaphore.acquire();
   try {
-    await pipeline(req.raw, minRate, peek);
-    const detected = peek.detectedFormat();      // 'jpeg' | ... | 'none'
-    if (detected === 'none') {
-      await upload.abort();
-      throw new InvalidFormatError();           // → 415 invalid_format в FR-8
-    }
-    upload.params!.ContentType = `image/${detected}`;  // S3 metadata
-    await upload.done();
-  } catch (e) {
-    await upload.abort().catch(() => {});
-    await this.fileRepo.deletePending(id);     // ADR-004 компенсация
-    throw e;
-  }
+    const minRate = new MinRateTransform(125_000, 30_000, 1_048_576);  // ADR-005
+    const peek = new MagicBytePeekTransform();                          // ADR-007
 
-  // Step 6 (ADR-004): UPDATE files SET status='committed' WHERE id=...
-  await this.fileRepo.markCommitted(id);
-  return reply.status(200).send({
-    id,
-    url: `${storage.publicBase}/${id}`,        // ADR-010
-  });
+    // ── Шаг 3 (ADR-004): peek 32 байт ДО CreateMultipartUpload ──
+    // Только peek, без запуска S3 pipeline'а. На отрицательном sniff
+    // выходим до любых S3-API-вызовов — нулевая cost-amplification на abuse 415.
+    const peekBuffer = await this.peekFirstBytes(req.raw, 32);
+    const sniff = sniffMagicBytes(peekBuffer);
+    if (!sniff) throw new InvalidFormatError();   // → 415 invalid_format
+
+    // ── Шаг 4 (ADR-004): INSERT pending до открытия multipart ──
+    const storage = await this.storageRepo.activeStorage();
+    await this.fileRepo.insertPending(id, storage.id, sniff.mime);
+    // Если CONFLICT (FR-12d) — выкинется ConflictError, никаких S3-API-call'ов.
+
+    // ── Шаг 5 (ADR-004): теперь и только теперь открываем multipart ──
+    const upload = new Upload({
+      client: this.s3,
+      params: {
+        Bucket: storage.bucket,
+        Key: id,
+        Body: peek,                                // peek проксирует stream дальше
+        ContentType: sniff.mime,                   // ADR-007
+        ContentDisposition: 'attachment',          // ADR-010 (защита polyglot-XSS)
+        Metadata: { 'x-content-type-options': 'nosniff' },  // ADR-010
+        IfNoneMatch: '*',                          // FR-12d defense in depth
+      },
+      partSize: 8 * 1024 * 1024,                   // 8 MiB
+      queueSize: 4,                                // 4 параллельных part'а
+      leavePartsOnError: false,
+      abortController: ctrl,
+    });
+
+    try {
+      // peek уже инициализирован peekBuffer; pipeline продолжает с этого места.
+      peek.write(peekBuffer);                       // вернуть peek-буфер обратно в pipeline
+      await Promise.all([
+        pipeline(req.raw, minRate, peek),
+        upload.done(),
+      ]);
+    } catch (e) {
+      await upload.abort().catch(() => {});
+      await this.fileRepo.deletePending(id);       // ADR-004 компенсация
+      throw e;
+    }
+
+    // ── Шаг 6 (ADR-004): UPDATE status='committed' + bytes ──
+    await this.fileRepo.markCommitted(id, minRate.totalBytes);
+    return reply.status(200).send({
+      id,
+      url: `${storage.public_base}/${id}`,         // ADR-010
+    });
+  } finally {
+    this.uploadSemaphore.release();                // ADR-005
+  }
 }
 ```
+
+`peekFirstBytes(req.raw, 32)` — синхронное чтение 32 байт из `req.raw` через `request.raw.once('readable')` и `request.raw.read(32)`; если короче 32 байт — `_flush`-эквивалент возвращает то, что есть, и sniff применяется к малому буферу (см. ADR-007). Возвращённый `peekBuffer` затем «вливается» обратно в pipeline через `peek.write(peekBuffer)` до запуска `pipeline()` — это не теряет first chunk и не требует unconsumed-buffer hack'а.
+
+S3Client retry-config (явно зафиксирован):
+
+```ts
+const s3 = new S3Client({
+  region: process.env.S3_REGION,
+  endpoint: process.env.S3_ENDPOINT,
+  maxAttempts: 2,                                  // 1 retry total (default 3 — слишком жадный)
+  retryMode: 'standard',
+  // standard backoff: 100ms × 2^attempt + jitter
+});
+```
+
+Уменьшение `maxAttempts` с 3 (default AWS SDK) до 2 защищает от удержания part-buffer'ов в retry-loop при transient S3 5xx (см. arch-review failure scenario «AWS S3 region degradation»). При 50 одновременных upload'ах × 32 MiB part-buffer × 3 retry = до 4.8 GB в worst-case; с `maxAttempts: 2` — до 3.2 GB, что вписывается в 4 GB pod-limit (см. ADR-012 capacity model).
 
 Для `LocalFS` — `pipeline(req.raw, minRate, peek, fs.createWriteStream(path, { flags: 'wx' }))` без буферизации; `wx` (write+exclusive) даёт conditional create (ADR-002 эквивалент `IfNoneMatch: *`).
 
@@ -138,3 +167,7 @@ S3 bucket lifecycle-rule (operational требование, не часть ко
 - Стоит ли динамически переключаться между single-shot `PutObjectCommand` (для тел < 8 MiB, известных через peek + Content-Length-эстимейт) и multipart `Upload`? Усложняет код, но экономит S3-API-вызовы. Архитектурное ревью.
 - 8 MiB partSize выбран как компромисс. Для файлов 50–100 MB больший partSize (16/32 MiB) ускорил бы upload, но увеличил бы peak memory (queueSize × partSize). Профилирование на NFR-LAT-1 — отдельный таск.
 - `IfNoneMatch: '*'` в `PutObject`/`Upload` — поддерживается AWS S3 (с 2024-08), MinIO 2024+, прочие S3-совместимые провайдеры — частично. Если выбран провайдер без поддержки, защита FR-12d ложится только на unique-constraint в БД (ADR-003). Документировать в operational README как pre-condition выбора S3-вендора.
+
+## Response to arch-review
+
+Disagree-flag arch-review (peek ДО `CreateMultipartUpload`) — **принят**. Decision-блок выше переписан: 32 байта peek'аются синхронно из `req.raw` через `read(32)` ДО любых S3-API-вызовов; `Upload` создаётся **только** после успешного sniff'а. Adversarial cost-amplification (атакующий генерирует 2 S3-API-call'а на каждый 415-payload) устранена. Дополнительно: `maxAttempts: 2` в `S3Client` config для ограничения retry-loop memory (см. failure scenario «AWS S3 region degradation»); memory-limit рекомендация для pod'а — в ADR-012 (capacity model).

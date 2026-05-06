@@ -76,26 +76,43 @@ app.useLogger(app.get(Logger));
 LoggerModule.forRoot({
   pinoHttp: {
     level: process.env.LOG_LEVEL ?? 'info',
-    timestamp: pino.stdTimeFunctions.isoTime,    // RFC 3339 в поле `time`
+    // sync: true для прода — не теряем терминальные записи на SIGKILL/OOM.
+    // arch-review #2: было `sync: false` (default), теперь явно `true`.
+    stream: pino.destination({ dest: 1, sync: true }),
+    timestamp: pino.stdTimeFunctions.isoTime,
     formatters: {
       level: (label) => ({ level: label }),       // строка вместо числа
       bindings: () => ({}),                        // убрать pid/hostname
+      // arch-review #2: переименование `time` → `ts` для NFR-OBS-1 контракта.
+      log: ({ time, ...rest }) => (time !== undefined ? { ts: time, ...rest } : rest),
     },
     messageKey: 'msg',
     customProps: (req) => ({
       request_id: req.id,                          // из genReqId
+      // arch-review #2: client_ip нормализуется из X-Forwarded-For
+      // (берём левый-самый = первый прокси-хоп клиента).
+      client_ip: extractClientIp(req),
     }),
-    customSuccessMessage: () => 'request_completed',  // event-name по умолчанию
+    customSuccessMessage: () => 'request_completed',
     customLogLevel: (req, res, err) =>
       err || res.statusCode >= 500 ? 'error'
       : res.statusCode >= 400 ? 'warn'
       : 'info',
     redact: {
-      paths: ['req.headers.authorization', 'req.headers.cookie'],
+      paths: ['req.headers.authorization', 'req.headers.cookie',
+              'req.headers["x-image-id"]'],        // UUID не в публичные логи (NFR-SEC-1c)
       remove: true,
     },
   },
 });
+
+function extractClientIp(req: FastifyRequest): string | null {
+  const xff = req.headers['x-forwarded-for'];
+  if (typeof xff === 'string' && xff.length > 0) {
+    return xff.split(',')[0].trim();
+  }
+  return req.ip ?? null;
+}
 ```
 
 Reply hook для X-Request-Id (плагин Fastify, регистрируется в `AppModule`):
@@ -110,24 +127,52 @@ app.getHttpAdapter().getInstance().addHook('onSend', (req, reply, payload, done)
 Терминальный helper `LogTerminal` (`libs/logging`):
 
 ```ts
-// Контракт NFR-OBS-1 — все поля обязательны, не nullable выборочно.
+// Контракт NFR-OBS-1 — все обязательные поля закреплены TypeScript-типом.
+// Расширения arch-review #11: per-stage timings + file_id_fingerprint.
+export type ImageFormat = 'jpeg' | 'png' | 'webp' | 'gif' | 'none';
+export type ErrorClass =
+  | 's3_put_failed' | 'db_insert_failed' | 'db_update_failed'   // arch-review #2: добавлен db_update_failed
+  | 'magic_byte_rejected' | 'size_exceeded' | 'invalid_uuid'
+  | 'conflict' | 'timeout' | 'too_many_in_flight' | 'internal_error';
+
 export interface TerminalEvent {
   event: 'upload_completed' | 'upload_rejected' | 'upload_failed';
-  duration_ms: number;
+  duration_ms: number;                       // total request duration
   bytes_in: number;
   http_status: number;
-  detected_format: 'jpeg' | 'png' | 'webp' | 'gif' | 'none';
-  storage_id: string | null;                      // null до выбора storage
-  error_class: ErrorClass | null;                  // null для успеха
+  detected_format: ImageFormat;
+  storage_id: number | null;                 // null до выбора storage
+  error_class: ErrorClass | null;            // null для успеха
+
+  // arch-review #11: per-stage timings — позволяют root-cause при NFR-LAT-1 regress
+  // без необходимости трейсов (NFR-OBS-1 их запрещает). Каждое поле — длительность
+  // соответствующего этапа в мс; null если этап не выполнился (например, db_commit_ms
+  // null при failed pipeline-fail до шага 6).
+  magic_byte_ms: number | null;              // ADR-007 peek + sniff
+  db_pending_ms: number | null;              // ADR-004 шаг 4
+  s3_upload_ms: number | null;               // ADR-006 pipeline + Upload.done
+  db_commit_ms: number | null;               // ADR-004 шаг 6
+
+  // arch-review #11: hash(UUID) как fingerprint — позволяет 3am correlation
+  // («у клиента upload-ID такой-то») без exposure'а самого UUID в публичных логах
+  // (NFR-SEC-1c). SHA-256 первые 16 символов hex = 64 бита — достаточно для
+  // unique correlation в окне нескольких часов, не достаточно для перебора.
+  file_id_fingerprint: string | null;        // null до известного UUID
 }
 
 @Injectable()
 export class TerminalLogger {
   constructor(private readonly logger: PinoLogger) {}
-  log(e: TerminalEvent) {
+  log(e: TerminalEvent): void {
     const level = e.error_class ? 'error' : 'info';
-    this.logger[level](e, e.event);   // request_id и ts добавит pino-http
+    this.logger[level](e, e.event);   // request_id, ts, client_ip добавит pino-http
   }
+}
+
+// Хелпер для file_id_fingerprint:
+import { createHash } from 'node:crypto';
+export function fingerprint(uuid: string): string {
+  return createHash('sha256').update(uuid).digest('hex').slice(0, 16);
 }
 ```
 
@@ -137,8 +182,10 @@ export class TerminalLogger {
 - 408 → `timeout`
 - 400 invalid_uuid → `invalid_uuid`
 - 409 conflict → `conflict`
-- S3 PutObject 5xx → `s3_put_failed`
-- DB INSERT/UPDATE error → `db_insert_failed`
+- 503 too-many-in-flight (ADR-005 семафор) → `too_many_in_flight`
+- S3 PutObject/Complete 5xx → `s3_put_failed`
+- DB INSERT error → `db_insert_failed`
+- DB UPDATE error (ADR-004 шаг 6) → `db_update_failed`
 - иное 5xx → `internal_error`
 
 UUID файла (`files.id`) **НЕ** логируется в публичные info/warn/error-записи (NFR-SEC-1c); если оператор включает `LOG_LEVEL=debug` (env override), UUID попадает в отдельные debug-записи через `this.logger.debug({ file_id: ... }, ...)`. Debug-записи не покрываются обязательным контрактом NFR-OBS-1 и не используются для SLO-верификации.
@@ -167,6 +214,14 @@ UUID файла (`files.id`) **НЕ** логируется в публичные
 
 ## Open questions
 
-- Логировать `client_ip` (`X-Forwarded-For` от ingress)? Не в обязательном контракте NFR-OBS-1, но полезно для оператора в 3am. Архитектурное ревью.
-- Стоит ли всё же логировать UUID файла на info-уровне для успешных upload'ов? NFR-SEC-1c говорит «логируется только во внутреннем уровне детализации» — формально info — это именно «внутренний уровень для оператора»; «публичные логи» в смысле NFR-SEC-1c — это, вероятно, агрегированные дашборды. Граница не идеально чёткая. Решение архитектурного ревью.
-- Pino sync vs async writer: дефолтный `pino.destination(1, { sync: false })` буферизует и пишет батчами (≤4 KB или каждые 10 ms). При краше pod'а (SIGKILL) последние ≤10 ms логов теряются. Это допустимо? Архитектурное ревью.
+- Стоит ли всё же логировать UUID файла на info-уровне для успешных upload'ов? NFR-SEC-1c говорит «логируется только во внутреннем уровне детализации» — `file_id_fingerprint` (hash 16 chars) уже даёт correlation; полный UUID — только debug-level. Граница согласована.
+
+## Response to arch-review
+
+Disagree-flag arch-review (`time → ts`, sync writer, `client_ip`) — **принят**. Decision-блок выше теперь содержит:
+- `formatters.log` переименовывает `time → ts` явно — golden-test в CI парсит JSON и asserts наличие именно `ts`.
+- `pino.destination({ sync: true })` для prod — терминальные записи не теряются при SIGKILL/OOM (ADR-006 failure scenario).
+- `client_ip` извлекается из `X-Forwarded-For` (левый-самый, нормализованный) и пишется в каждое событие через `customProps`.
+- `error_class` enum расширен: `db_update_failed` (для ADR-004 шаг 6 ошибок UPDATE) и `too_many_in_flight` (для ADR-005 семафора).
+
+Disagree-flag arch-review #11 (per-stage timings + UUID fingerprint) — **принят** в полном объёме. `TerminalEvent` расширен четырьмя per-stage timing полями (`magic_byte_ms`, `db_pending_ms`, `s3_upload_ms`, `db_commit_ms`) и `file_id_fingerprint` (SHA-256 hex first 16 chars). Внешний SLO-toolchain получает достаточно сигнала для root-cause при p95-regress'е на NFR-LAT-1a; oncall может коррелировать клиентский upload-ID без exposure'а UUID в публичных логах.

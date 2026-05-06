@@ -53,18 +53,44 @@ CREATE TABLE storages (
     is_active    BOOLEAN NOT NULL DEFAULT true
 );
 
+-- files — partitioned by created_at (monthly RANGE) с дня 1.
+-- См. arch-review follow-up #7 — partitioning не откладывается.
 CREATE TABLE files (
-    id           UUID PRIMARY KEY,             -- FR-7 UUID v4; unique constraint = FR-12d
+    id           UUID NOT NULL,                -- FR-7 UUID v4 (или v7); FR-12d via PK
     storage_id   SMALLINT NOT NULL REFERENCES storages(id),
     object_key   TEXT NOT NULL,                -- relative key/path within storage; FR-3b
     content_type TEXT NOT NULL,                -- 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
-    bytes        BIGINT NOT NULL CHECK (bytes >= 0 AND bytes <= 104857600),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX files_storage_id_idx ON files(storage_id);
+    -- bytes: NULLABLE на pending (тело ещё не считано), NOT NULL на committed.
+    -- См. arch-review #7 + ADR-004 шаг 6 (UPDATE bytes одновременно со status).
+    bytes        BIGINT CHECK (bytes IS NULL OR (bytes >= 0 AND bytes <= 104857600)),
+    status       TEXT NOT NULL CHECK (status IN ('pending','committed')),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id, created_at)               -- partition-key обязан быть в PK
+) PARTITION BY RANGE (created_at);
+
+-- Один безопасный default-партишн (ловит данные, попавшие за пределы pre-created month-partitions).
+CREATE TABLE files_default PARTITION OF files DEFAULT;
+
+-- Месячные партиции пре-создаются миграцией ADR-011 (текущая + 3 на запас).
+-- Пример первой партиции:
+-- CREATE TABLE files_2026_05 PARTITION OF files
+--   FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
+
+-- Bytes-инвариант на committed-state: bytes ОБЯЗАН быть NOT NULL.
+-- В Postgres нельзя сослаться на другую колонку в NOT NULL, поэтому проверяем через CHECK:
+ALTER TABLE files ADD CONSTRAINT files_bytes_committed_chk
+  CHECK (status = 'pending' OR bytes IS NOT NULL);
+
+-- Partial index для gc-сканирования (ADR-004): резко уменьшает работу
+-- от full-scan files (200 млн строк) до index-only scan по узкой группе pending.
+CREATE INDEX files_pending_idx ON files (created_at) WHERE status = 'pending';
+
+-- Вторичный индекс для оперативных запросов «сколько файлов в storage X»
+-- (operational SQL вне sla, но дешевле, чем seq-scan по партициям).
+CREATE INDEX files_storage_id_idx ON files (storage_id);
 ```
 
-INSERT в `files` идёт через `INSERT ... ON CONFLICT (id) DO NOTHING RETURNING id` — атомарная защита от race на client-supplied UUID (FR-12d). Если RETURNING пустой → 409 Conflict (FR-8 `conflict`). См. ADR-004 про порядок INSERT vs PutObject.
+INSERT в `files` идёт через `INSERT ... ON CONFLICT (id, created_at) DO NOTHING RETURNING id` — атомарная защита от race на client-supplied UUID (FR-12d). Если RETURNING пустой → 409 Conflict (FR-8 `conflict`). См. ADR-004 про порядок INSERT vs PutObject. На pending-INSERT'е `bytes` пишется как `NULL`; на UPDATE-finalize шага 6 — выставляется реальный размер (`bytes_in` из ADR-005 счётчика).
 
 `storages.config` — JSONB, потому что схема параметров расходится между local (`base_path`) и s3 (`endpoint`, `bucket`, `region`, `credentials_ref`); жёсткие колонки породили бы NULL'ы и CHECK-каскад. `public_base` отделён от `config` — это якорь для ADR-010 (канонический URL независим от endpoint, но привязан к storage-сущности FR-3a).
 
@@ -88,6 +114,10 @@ INSERT в `files` идёт через `INSERT ... ON CONFLICT (id) DO NOTHING RE
 
 ## Open questions
 
-- Нужен ли индекс по `(storage_id, created_at)` для будущего operational LIST? LIST out-of-scope, но операторские SQL-запросы «сколько файлов в storage X за период Y» вероятны. Решение архитектурного ревью.
-- Partitioning by `created_at` (monthly) — закладывать в первой миграции или вводить позже? Закладка дороже, поздняя миграция требует full-rewrite таблицы.
+- Нужен ли композитный индекс `(storage_id, created_at)` для будущего operational LIST? LIST out-of-scope, но операторские SQL-запросы «сколько файлов в storage X за период Y» вероятны. Сейчас оставлен только `(storage_id)` — расширим при необходимости.
+- UUIDv7 (sequential-friendly) vs UUIDv4 для server-generated UUID: NFR-SEC-1a требует только CSPRNG; UUIDv7 random-tail (74 бита) удовлетворяет требованию unguessability. Переход с v4 на v7 уменьшает b-tree bloat на ~50%, что критично для NFR-CAP-1. Решение отложено на code-review реализации.
+
+## Response to arch-review
+
+Disagree-flag arch-review (partitioning как load-bearing decision) — **принят**: monthly RANGE-partitioning по `created_at` зафиксирован в Decision-блоке выше с дня 1, plus partial index для gc-производительности и nullable `bytes` с CHECK-constraint, разрешающим NULL только на `status='pending'`. Это устраняет противоречие между ADR-003 (CHECK на bytes) и ADR-004 (INSERT pending до известного размера тела).
 

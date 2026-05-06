@@ -83,5 +83,13 @@ export const BLOB_STORE = Symbol('BLOB_STORE');
 ## Open questions
 
 - Поддерживать ли третий бэкенд (например, GCS native API) в первой итерации? Спека требует только S3-совместимый — пока нет.
-- Должен ли `BlobStore.Put` возвращать ETag/version для будущей дедупликации (out-of-scope «Идемпотентность»)? Архитектурное ревью.
+- Должен ли `BlobStore.put` возвращать ETag/version для будущей дедупликации (out-of-scope «Идемпотентность»)? Архитектурное ревью.
+
+## Response to arch-review disagree-flag
+
+Disagree-flag arch-review предлагает переименовать `put` с опцией `ifNoneMatch` в отдельный метод `putIfAbsent` для type-system enforcement FR-12d. **Решение разработчика — отклонить**.
+
+Обоснование: type-system invariant против runtime-config knob — настоящее улучшение, но цена не нулевая. Раздельные `put` и `putIfAbsent` дублируют сигнатуру (та же body/contentType/abortSignal/...), удваивают surface поверхности тестирования, и сами по себе НЕ запрещают вызов «легаси» `put` из upload-handler — для этого всё равно нужна code-review-discipline или ESLint-rule, которые в равной мере решают проблему и для опционального флага. Защита FR-12d на сегодня обеспечивается **двумя слоями**: (1) unique-constraint в `files.id PRIMARY KEY` (ADR-003) — атомарная защита на уровне БД, не зависящая от storage-уровня; (2) `IfNoneMatch: '*'` на S3 multipart (ADR-006) — defense-in-depth. Оба слоя работают независимо от того, как реализована абстракция `BlobStore`.
+
+Принимаемая остаточная слабость: `BlobStore.put({ ifNoneMatch: false })` физически возможен и не ловится компилятором. Митигация — единая code-review-rule «`ifNoneMatch` в upload-handler ОБЯЗАН быть `true`» + интеграционный тест на регрессию (специально сконструированный test, который пытается записать тот же UUID дважды без ifNoneMatch и ожидает, что unique-constraint в БД остановит вторую запись). Если когда-нибудь FR-12d захотят расширить (например, дедупликация по контенту), переход на `putIfAbsent` остаётся опцией без слома совместимости.
 

@@ -48,29 +48,42 @@ FR-12 — порядок коммита и семантика `200 OK` (ново
 
 Принят **two-phase INSERT (`status='pending'`) → PutObject → UPDATE (`status='committed'`)**.
 
-Алгоритм upload-handler:
+Алгоритм upload-handler (учтён disagree-flag arch-review: INSERT-first означает буквально INSERT перед открытием multipart, не «параллельно»):
 
 ```
 1. Определить uuid (X-Image-Id или server-generated, FR-7).
 2. Определить storage_id (config-driven, ADR-002 + ADR-003).
-3. Стрим тела в magic-byte validator (ADR-007), параллельно — в S3 multipart upload (ADR-006).
-   3a. Не завершать multipart до конца шага 4.
-4. INSERT INTO files (id, storage_id, object_key=uuid, content_type=detected, bytes,
-                     status='pending') ON CONFLICT (id) DO NOTHING RETURNING id;
-   — если RETURNING пустой → abort multipart, return 409 conflict (FR-12d).
-5. Complete S3 multipart с условием If-None-Match: * (FR-12d defense in depth).
-   — если 412 PreconditionFailed → DELETE files WHERE id=$uuid AND status='pending';
-     return 409 conflict.
-   — если иной 5xx → DELETE files WHERE id=$uuid AND status='pending' (best-effort);
+3. Прочитать первые 32 байта тела через PassThrough peek на req.raw (НЕ запуская
+   pipeline в S3 ещё). См. ADR-006 — peek ДО CreateMultipartUpload.
+   3a. Если magic-byte sniff fail → return 415 invalid_format. Тело отбрасывается;
+       никаких записей в БД и storage не создаётся.
+4. INSERT INTO files (id, storage_id, object_key=uuid, content_type=detected, bytes=NULL,
+                     status='pending', created_at=now())
+   ON CONFLICT (id, created_at) DO NOTHING RETURNING id;
+   — если RETURNING пустой → return 409 conflict (FR-12d). На этом этапе никакой
+     multipart upload ещё НЕ был открыт, поэтому никаких abort-API-call'ов.
+5. Открыть S3 multipart Upload (CreateMultipartUpload) и стримить остаток тела через
+   pipeline(req.raw [+ peek-buffered], MinRateTransform, Upload.body). Параметры:
+   IfNoneMatch: '*' (FR-12d defense in depth), AbortController привязан к request.
+   — если transient 5xx / network error → upload.abort() (best-effort);
+     DELETE files WHERE id=$uuid AND status='pending'; return 500 internal_error.
+   — если 412 PreconditionFailed на CompleteMultipartUpload (S3 If-None-Match триггер) →
+     upload.abort() уже не нужен (Complete не прошёл); DELETE pending; return 409.
+   — если timeout (NFR-LAT-2) → upload.abort(); DELETE pending; return 408.
+6. UPDATE files SET status='committed', bytes=$bytes_in
+   WHERE id=$uuid AND status='pending'.
+   — bytes_in приходит из MinRateTransform.totalBytes (ADR-005 счётчик).
+   — если 0 rows updated (race с gc — строка уже удалена gc-задачей за TTL) →
+     BlobStore.delete($uuid) (best-effort, объект мог не быть нужен клиенту);
      return 500 internal_error (FR-12c).
-6. UPDATE files SET status='committed' WHERE id=$uuid AND status='pending'.
-   — если 0 rows updated (race с gc) → DELETE из S3 (best-effort), return 500.
 7. Return 200 {id, url} (FR-8a).
 ```
 
-Семантика `200 OK` (FR-12a): возвращается только после `status='committed'`. Внешним наблюдателям (вне сервиса) `status='pending'` не виден — single-endpoint сервис не имеет публичного read-API; URL для скачивания идёт мимо сервиса (FR-9, NFR-DEP-1c), но **гарантия скачиваемости** даётся только после шага 7.
+Ключевое отличие от первоначальной редакции (до arch-review): шаг 4 (INSERT pending) **завершается** до шага 5 (открытие multipart). На UUID-collision (CONFLICT в шаге 4) сервис возвращает 409 БЕЗ необходимости abort-mid-multipart — нет dangling state в S3, нет лишнего CreateMultipartUpload+AbortMultipartUpload API-call'а. Стоимость: один лишний DB roundtrip ~5 мс перед началом приёма тела; отыгрывается удалением целого error-state'а (compensation на abort-mid-multipart исчезает) и устранением cost-amplification на adversarial UUID-collision.
 
-GC-процесс: фоновая задача в каждом pod через `@nestjs/schedule` (cron `*/5 * * * *`) — раз в 5 минут выполняет `SELECT id, storage_id, object_key FROM files WHERE status='pending' AND created_at < now() - interval '15 minutes'` (15 минут = NFR-LAT-2c wall-clock max + запас). Для каждой записи: `BlobStore.delete()` (best-effort) → `DELETE FROM files WHERE id=$ AND status='pending'`. Если несколько pod'ов — через `SELECT ... FOR UPDATE SKIP LOCKED` (ровно одна реплика забирает запись на проход). На SIGTERM (см. ADR-009) GC останавливается через `OnApplicationShutdown` lifecycle-хук до закрытия DB pool.
+Семантика `200 OK` (FR-12a): возвращается только после `status='committed'` И `bytes` записан как NOT NULL. Внешним наблюдателям (вне сервиса) `status='pending'` не виден — single-endpoint сервис не имеет публичного read-API; URL для скачивания идёт мимо сервиса (FR-9, NFR-DEP-1c), но **гарантия скачиваемости** даётся только после шага 7.
+
+GC-процесс: фоновая задача в каждом pod через `@nestjs/schedule` (cron `*/5 * * * *`) — раз в 5 минут выполняет `SELECT id, storage_id, object_key FROM files WHERE status='pending' AND created_at < now() - interval '15 minutes' FOR UPDATE SKIP LOCKED LIMIT 100` (15 минут = NFR-LAT-2c wall-clock max + запас). Использует partial index `files_pending_idx (created_at) WHERE status='pending'` (см. ADR-003) — index-only scan без full-table-scan. `LIMIT 100` ограничивает batch и не даёт долгой транзакции. Для каждой записи: `BlobStore.delete()` (best-effort, с тайм-аутом 5 секунд через AbortSignal) → `DELETE FROM files WHERE id=$ AND status='pending'`. Если несколько pod'ов — `SKIP LOCKED` гарантирует, что каждую запись забирает ровно одна реплика. На SIGTERM (см. ADR-009) gc-задача останавливается **первой** в OnApplicationShutdown-graph (до закрытия DB pool и S3 client'а), и при этом текущий in-flight batch имеет до 30 секунд на завершение через AbortController; если не успел — open transaction откатывается БД autonomy на close, partial state на S3 (DELETE прошёл, но DELETE FROM files не успел) обработается на следующем gc-цикле другого pod'а или после рестарта.
 
 ## Consequences
 
@@ -94,4 +107,8 @@ GC-процесс: фоновая задача в каждом pod через `@
 - Альтернатива: вместо `status` колонки иметь отдельную таблицу `pending_files` и MOVE на commit. Чище, но удваивает write-amplification. Архитектурное ревью.
 - Должен ли gc-интервал (5 минут) и TTL (15 минут) быть конфигурируемыми? Скорее да, default'ы зафиксированы.
 - Как поступать, если в момент UPDATE `status='committed'` процесс умер ровно после S3 complete? gc найдёт `status='pending'` + объект в S3 (HEAD вернёт 200), удалит и то и другое — это потеря успешного upload'а с точки зрения клиента, который мог не получить response. Принимаем под NFR-DUR-1 (best-effort durability), но фиксируем как остаточный риск для архитектурного ревью.
+
+## Response to arch-review
+
+Disagree-flag arch-review (порядок шагов 3–4: open multipart до INSERT) — **принят**. Алгоритм Decision-блока переписан: INSERT pending теперь **обязательно завершается до** открытия S3 multipart upload (бывший шаг 3 разделён на peek-only-3 и pipeline-launch-5). Это устраняет abort-mid-multipart code-path и cost-amplification на adversarial 415/409. Cost — один дополнительный DB roundtrip (~5 мс) перед началом приёма тела; в бюджете NFR-LAT-1a (p95 < 2с) это шум. Семантика OnApplicationShutdown ordering для gc-задачи зафиксирована в обновлённом GC-процесс параграфе: gc останавливается **первым** до закрытия DB pool и S3 client.
 

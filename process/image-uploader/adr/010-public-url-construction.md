@@ -53,7 +53,15 @@ url(key: string): string {
 
 Бакет (S3) должен быть сконфигурирован с public-read ACL ИЛИ за CDN с public-read origin policy. Это операционное предусловие — фиксируется в README операционной части и в `BlobStore.HealthCheck` (ADR-009): для S3 health-check может опционально проверять `GetBucketPolicyStatus.IsPublic == true` (вне MVP).
 
-S3-объекты сохраняются (ADR-002 `Put`) с `Content-Type` из ADR-007 magic-byte sniffer'а; `Content-Disposition`, `X-Content-Type-Options` — НЕ выставляются (объекция 3 ревью отклонена).
+S3-объекты сохраняются (ADR-002 `put`) с **тремя** обязательными полями HTTP-метаданных, выставляемыми на уровне `Upload.params`:
+
+- `Content-Type: image/{jpeg|png|webp|gif}` — из ADR-007 magic-byte sniffer'а; никогда не из клиентского `Content-Type` (FR-10);
+- `Content-Disposition: attachment` — заставляет браузер скачивать файл, а не рендерить inline в текущем origin;
+- `X-Content-Type-Options: nosniff` — запрещает браузеру MIME-sniff'ить тело и игнорировать `Content-Type` (защита от polyglot stored-XSS под доменом `public_base`).
+
+Эти три поля выставляются как metadata объекта в S3 PutObject/CompleteMultipartUpload, чтобы при прямом скачивании из бакета (FR-9, минуя сервис) браузер получал их. Если оператор разворачивает CDN перед бакетом, CDN ОБЯЗАН пробрасывать эти заголовки в ответ — это фиксируется в operational README как pre-condition выбора CDN-провайдера.
+
+`X-Content-Type-Options: nosniff` отдельно: исходное возражение spec-skeptic (объекция 3 ревью), хотя и было отклонено разработчиком на стадии spec, представляет cost-zero defence-in-depth, и arch-review ставит его как free correctness improvement; добавление этих двух полей метаданных не нарушает spec и не вводит новых зависимостей.
 
 ## Consequences
 
@@ -67,7 +75,7 @@ S3-объекты сохраняются (ADR-002 `Put`) с `Content-Type` из 
 ### Negative
 
 - Публичный read бакета — operational risk: misconfiguration ACL может exposed дополнительные данные, лежащие в том же бакете; mitigation — выделенный bucket только под image-uploader, без других объектов.
-- `Content-Type: image/*` выставляется на S3-метаданном (ADR-002, ADR-007), но `X-Content-Type-Options: nosniff` НЕТ — теоретический stored-XSS через полиглот сохраняется (объекция 3 ревью отклонена; принимаемый риск).
+- `Content-Type: image/*` + `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff` выставляются на S3-метаданном (ADR-002, ADR-007); защита от polyglot stored-XSS обеспечена при условии, что CDN/бакет пробрасывает эти заголовки в ответ. Принимаемая остаточная слабость: misconfiguration CDN, которая стрипит `nosniff`/`Content-Disposition` — operational риск, не code-риск.
 - Если оператор сменит `storages.public_base` в БД (например, переключит CDN-провайдера с другим доменом) — все ранее выданные URL станут невалидными для клиентов, не получивших обновление. ADR-002 + ADR-003 явно показывают, что `public_base` — единственная точка контроля; разработчик должен документировать «не менять public_base после первого использования» в operational README. Это операционное предусловие, не technical guarantee.
 - Bandwidth-cost провайдера за исходящий download-трафик растёт линейно с количеством скачиваний, и сервис на это не имеет контроля (download out-of-scope). Принимаемое.
 - В dev-режиме появляется опциональный read-эндпоинт для LocalFS — это асимметрия с prod (где такого эндпоинта нет). Должно быть явно guarded конфигом `ENV=dev`, иначе риск утечки в prod.

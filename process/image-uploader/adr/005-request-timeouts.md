@@ -74,17 +74,26 @@ app.getHttpAdapter().getInstance().addContentTypeParser(
 );
 ```
 
-`MinRateTransform` в pipeline upload-handler'а:
+`MinRateTransform` + **module-level WeakSet sweeper** (один глобальный таймер на pod, не per-request):
 
 ```ts
 // libs/streams/min-rate.transform.ts
+const ACTIVE_TRANSFORMS = new Set<MinRateTransform>();
+let SWEEPER: NodeJS.Timeout | null = null;
+
+function ensureSweeper(): void {
+  if (SWEEPER) return;
+  SWEEPER = setInterval(() => {
+    for (const t of ACTIVE_TRANSFORMS) t.tick();
+  }, 1000);
+  SWEEPER.unref();
+}
+
 export class MinRateTransform extends Transform {
   private readonly window: number[] = new Array(30).fill(0);  // 30 × 1s
   private windowIdx = 0;
-  private lastTickMs = Date.now();
+  totalBytes = 0;                                              // public — читается ADR-004 шаг 6
   private bytesAfterGrace = 0;
-  private totalBytes = 0;
-  private readonly tickHandle: NodeJS.Timeout;
 
   constructor(
     private readonly minRateBps: number,           // 125_000 = 1 Mbps / 8
@@ -92,11 +101,11 @@ export class MinRateTransform extends Transform {
     private readonly gracePrefixBytes: number,      // 1_048_576 (первый MB)
   ) {
     super();
-    this.tickHandle = setInterval(() => this.tick(), 1000);
-    this.tickHandle.unref();
+    ensureSweeper();
+    ACTIVE_TRANSFORMS.add(this);
   }
 
-  _transform(chunk: Buffer, _enc, cb) {
+  _transform(chunk: Buffer, _enc: BufferEncoding, cb: TransformCallback): void {
     this.totalBytes += chunk.length;
     if (this.totalBytes > this.gracePrefixBytes) {
       this.bytesAfterGrace += chunk.length;
@@ -105,7 +114,8 @@ export class MinRateTransform extends Transform {
     cb(null, chunk);
   }
 
-  private tick() {
+  /** Called by global sweeper once per second. Public для тестов. */
+  tick(): void {
     this.windowIdx = (this.windowIdx + 1) % 30;
     this.window[this.windowIdx] = 0;
     if (this.totalBytes <= this.gracePrefixBytes) return;
@@ -116,10 +126,40 @@ export class MinRateTransform extends Transform {
     }
   }
 
-  _final(cb: () => void) { clearInterval(this.tickHandle); cb(); }
-  _destroy(err, cb) { clearInterval(this.tickHandle); cb(err); }
+  _final(cb: () => void): void { ACTIVE_TRANSFORMS.delete(this); cb(); }
+  _destroy(err: Error | null, cb: (err: Error | null) => void): void {
+    ACTIVE_TRANSFORMS.delete(this);
+    cb(err);
+  }
 }
 ```
+
+Стоимость: один `setInterval(1000)` на pod независимо от RPS; сложность тика O(N × 30) = O(N) где N = одновременные in-flight загрузки. На пике 50 одновременных загрузок (см. ADR-012 capacity model) — 1 итерация в секунду по 50 элементам, sub-millisecond event-loop time.
+
+**Per-pod max-concurrent-uploads семафор** (defense-in-depth перед HPA):
+
+```ts
+// libs/concurrency/upload-semaphore.ts
+@Injectable()
+export class UploadSemaphore {
+  private inFlight = 0;
+  private readonly limit = parseInt(process.env.MAX_CONCURRENT_UPLOADS ?? '50', 10);
+
+  async acquire(): Promise<void> {
+    if (this.inFlight >= this.limit) {
+      throw new ServiceUnavailableException({
+        error: { code: 'too_many_in_flight', message: 'pod saturated, retry later' },
+      });
+    }
+    this.inFlight++;
+  }
+
+  release(): void { this.inFlight = Math.max(0, this.inFlight - 1); }
+  current(): number { return this.inFlight; }
+}
+```
+
+Используется как guard в upload-handler ДО шага 3 (peek). При исчерпании — `503 Service Unavailable` с `error.code = 'too_many_in_flight'` (расширение FR-8 enum, не противоречит спеке: 503 — стандартный сигнал «retry later»). Численный лимит 50 согласован с capacity model в ADR-012; HPA масштабирует количество pod'ов при saturation rate `acquire-failures > 1%`.
 
 В upload-handler'е (Fastify route, через NestJS controller с `@Req()`):
 
@@ -181,6 +221,9 @@ export class GlobalErrorFilter implements ExceptionFilter {
 
 ## Open questions
 
-- Стоит ли вынести параметры (idle, rate, window, grace-prefix, body-limit) в ENV-переменные? NFR-LAT-2e говорит «реализация может ужесточать». Скорее да, default'ы фиксированы спекой; для prod-разводки полезно иметь ручки. Архитектурное ревью.
-- `setInterval` per-request vs один глобальный «sweep» по всем активным `MinRateTransform`'ам через `WeakSet`. Оптимизация при пиках 400 RPS (NFR-CAP-1) — оставлено на профилирование.
+- Стоит ли вынести параметры (idle, rate, window, grace-prefix, body-limit, max-concurrent-uploads) в ENV-переменные? NFR-LAT-2e говорит «реализация может ужесточать». Скорее да, default'ы фиксированы спекой; для prod-разводки полезно иметь ручки. Архитектурное ревью.
 - Метрика `slowloris_disconnect_count` — out-of-scope (NFR-OBS-1 запрещает счётчики). Внешний оператор узнаёт о slowloris только через парсинг JSON-логов с `error_class='timeout'` — это принимаемое следствие отказа от метрик.
+
+## Response to arch-review
+
+Disagree-flag arch-review (per-request `setInterval` vs WeakSet sweeper) — **принят**. Decision-блок выше обновлён: один module-level `Set<MinRateTransform>` + один глобальный `setInterval(1000)` на pod, который перебирает активные стримы. Стоимость — те же ~80 строк кода, поведение детерминированное независимо от RPS. Дополнительно введён `UploadSemaphore` (limit 50 на pod, ENV-override) как defense-in-depth перед HPA и для tarpit-защиты «1 Mbps + 1 byte attack» — атакующий, прошедший `MinRateTransform`, всё равно занимает один из 50 слотов pod'а; 50 атакующих = насыщенный pod, новые запросы получают 503. HPA реагирует на saturation rate, новые pod'ы поднимаются.
